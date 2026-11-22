@@ -1,20 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { RevealAccent } from './reveal-accent';
 import { constellationState } from './constellation-state';
 import { useMotionDirector } from './motion-director';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, ShieldAlert, Waypoints } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import { Activity, Bot, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, Server, ShieldAlert, Waypoints } from 'lucide-react';
 import { Brand } from './brand';
-import { Assets, Audit, Findings, Overview, RecordDetails } from './workspace-views';
+import { Assets, Audit, Environments, Findings, Overview, RecordDetails } from './workspace-views';
 import { Threats } from './workspace-threats';
-import { Topology } from './topology';
+import { SpatialStage, Topology } from './topology';
 import { scope, sourceTypes, time } from './workspace-ui';
 import './workspace.css';
 
 const navigation = [
-  ['Monitoring', [['Overview', '', Gauge], ['Topology', 'topology', Waypoints], ['Findings', 'findings', ShieldAlert], ['Assets', 'assets', Box], ['Identity', 'identity', Fingerprint]]],
-  ['Operations', [['Threats', 'threats', Radar], ['Audit trail', 'audit', ListChecks]]]
+  ['Monitoring', [['Overview', '', Gauge], ['Environments', 'environments', Server], ['Topology', 'topology', Waypoints], ['Findings', 'findings', ShieldAlert], ['Assets', 'assets', Box], ['Identity', 'identity', Fingerprint]]],
+  ['Operations', [['Threats', 'threats', Radar], ['AI Analyst', 'analyst', Bot], ['Audit trail', 'audit', ListChecks]]]
 ];
 
 function Sidebar({ user, collapsed, toggle, logout }) {
@@ -82,7 +82,15 @@ export function Dashboard({ user, api, onLogout }) {
   });
   const admin = user.role === 'admin';
   const data = snapshot?.environment === environment ? snapshot?.data : null;
+  const openRecord = useCallback(record => {
+    if (record.type === 'finding') {
+      const finding = data?.findings.find(entry => entry.id === record.id) || data?.resolved.find(entry => entry.id === record.id);
+      if (finding?.severity === 'CRITICAL') director.play('critical');
+    }
+    setRecord(record);
+  }, [data, director]);
   const destination = location.pathname.split('/')[2] || '';
+  useEffect(() => { window.scrollTo(0, 0); }, [destination]);
   const label = navigation.flatMap(([, items]) => items).find(([, id]) => id === destination)?.[0] || 'Overview';
   const update = () => setRefresh(value => value + 1);
   const scopeError = actionError?.environment === environment ? actionError.message : '';
@@ -161,7 +169,7 @@ export function Dashboard({ user, api, onLogout }) {
         </div>)}
       </div>)}</div></div>}
   </>;
-  return <div ref={workspace} className={'workspace' + (collapsed ? ' workspace-collapsed' : '') + (!destination ? ' workspace-spatial' : '')}
+  return <div ref={workspace} className={'workspace' + (collapsed ? ' workspace-collapsed' : '') + ' workspace-spatial workspace-cinematic'}
     data-effects={cinematic ? 'on' : 'off'}>
     <Sidebar user={user} collapsed={collapsed} toggle={toggleSidebar} logout={logout} />
     <main className="workspace-main" id="main">
@@ -192,26 +200,27 @@ export function Dashboard({ user, api, onLogout }) {
             selectedSource?.schedule === false ? 'Manual scans only' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
           {requesting && <span className="loading-line" />}
         </div>
-        {destination && destination !== 'topology' && sourceNotices}
+        {snapshot?.data && <SpatialStage data={data || snapshot.data} open={openRecord} intro={overviewIntro}
+          loading={!data} pending={requesting || !!active} sourceLabel={selectedSource?.label || 'All environments'}
+          {...{ scan, scanToken, environment, director, cinematic, destination }} />}
         {(scopeError || fetchError) && <div className="feedback error" role="alert"><CircleAlert size={18} />
           {scopeError || ('Dashboard refresh failed: ' + fetchError)}</div>}
-        {(data || (!destination && snapshot?.data)) ? <AnimatePresence mode="wait" initial={false}><motion.div className="dashboard-view" key={destination}
-          initial={cinematic ? { opacity: .68, y: 4 } : false} animate={{ opacity: 1, y: 0 }}
-          exit={cinematic ? { opacity: .65 } : undefined} transition={{ duration: cinematic ? .15 : 0 }}>
-          <RouteReveal director={director} destination={destination} cinematic={cinematic} />
+        {data ? <div className="dashboard-view destination-panel" id="workspace-operations" aria-label={label + ' operations'} tabIndex={-1}>
+          <RouteReveal key={destination} director={director} destination={destination} cinematic={cinematic} />
+          {destination && destination !== 'topology' && sourceNotices}
           <Routes location={location}>
-            <Route index element={<Overview data={data || snapshot.data} open={setRecord} notices={sourceNotices} intro={overviewIntro}
-              loading={!data} pending={requesting || !!active} sourceLabel={selectedSource?.label || 'All environments'}
-              {...{ scan, scanToken, environment, director, cinematic }} />} />
-            <Route path="topology" element={<Topology data={data} open={setRecord} {...{ active, scan, scanToken, environment, cinematic }} />} />
-            <Route path="findings" element={<Findings data={data} open={setRecord} />} />
-            <Route path="assets" element={<Assets data={data} open={setRecord} />} />
-            <Route path="identity" element={<Findings data={data} open={setRecord} identity />} />
+            <Route index element={<Overview data={data} open={openRecord} notices={sourceNotices} />} />
+            <Route path="environments" element={<Environments data={data} />} />
+            <Route path="topology" element={<Topology data={data} open={openRecord} {...{ active, scan, scanToken, environment, cinematic }} />} />
+            <Route path="findings" element={<Findings data={data} open={openRecord} />} />
+            <Route path="assets" element={<Assets data={data} open={openRecord} />} />
+            <Route path="identity" element={<Findings data={data} open={openRecord} identity />} />
             <Route path="threats" element={<Threats {...{ data, admin, api, environment, update, reportError, director, cinematic }} />} />
+            <Route path="analyst" element={<Threats analystFirst {...{ data, admin, api, environment, update, reportError, director, cinematic }} />} />
             <Route path="audit" element={<Audit {...{ data, admin, api }} />} />
             <Route path="*" element={<Navigate to="/workspace" replace />} />
           </Routes>
-        </motion.div></AnimatePresence> : <Skeleton disconnected={!!fetchError} />}
+        </div> : <Skeleton disconnected={!!fetchError} />}
       </div>
     </main>
     <RecordDetails record={record} data={data} close={() => setRecord(null)} />

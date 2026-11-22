@@ -1,12 +1,13 @@
 import React, { Component, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { RevealAccent } from './reveal-accent';
-import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Box, Crosshair, Layers3, List, Maximize2, Minimize2, Minus, Plus, Waypoints } from 'lucide-react';
 import { connections, Empty, Pill, SearchField, sourceName, sourceTypes, statuses, time } from './workspace-ui';
 import { indexTopology, layoutTopology, topologyTypes, visibleNodes } from './topology-model';
 import './topology.css';
 import './spatial-overview.css';
+import { stageDestination } from './stage-destinations';
+import { stagePoster } from './stage-reels';
 
 const Scene = lazy(() => import('./topology-scene'));
 const LIMIT = 320;
@@ -228,7 +229,7 @@ function PreviewMap({ graph, assets, selected, select }) {
   </svg>;
 }
 
-export function SpatialOverview({ data, open, scan, scanToken, environment, intro, loading, pending, sourceLabel, director, cinematic }) {
+export function SpatialStage({ data, open, scan, scanToken, environment, intro, loading, pending, sourceLabel, director, cinematic, destination }) {
   const stage = useRef(null);
   const section = useRef(null);
   const labels = useRef(null);
@@ -244,6 +245,8 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
   const [selection, setSelection] = useState(null);
   const [command, setCommand] = useState(null);
   const [pointerActive, setPointerActive] = useState(false);
+  const location = stageDestination(destination);
+  const enteredDestination = useRef(null);
   const [hovered, setHovered] = useState(null);
   const hoverResource = useCallback((id, point) => { targetPoint.current = point; setHovered(id); }, []);
   const shownScope = useRef(environment);
@@ -269,15 +272,22 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
   const layoutKey = JSON.stringify(layoutTopology(visibleNodes(all, chosen?.id, 48)));
   const graph = useMemo(() => JSON.parse(layoutKey), [layoutKey]);
   const map = <PreviewMap graph={graph} assets={assets} selected={chosen?.id} select={select} />;
-  const show3D = activated && !flat && !failed && !!all.length;
+  const show3D = activated && !flat && !failed;
   const focusNodes = graph.nodes.map(node => nodes.get(node.id));
 
   useEffect(() => { if (visible && !flat) activate(true); }, [visible, flat]);
   useEffect(() => {
+    if (enteredDestination.current === destination) return;
+    if (enteredDestination.current !== null || destination) director.play('destination');
+    enteredDestination.current = destination;
+    setSelection(null);
+    setCommand({ action: 'destination', location });
+    if (cinematic) return director.reveal(section.current, '.spatial-title h2, .spatial-title p');
+  }, [destination, location, director, cinematic]);
+  useEffect(() => {
     if (!visible || intro.current.titlePlayed || !cinematic) return;
     intro.current.titlePlayed = true;
     director.play('entrance');
-    return director.reveal(section.current, '.spatial-title h2, .spatial-title p');
   }, [visible, intro, director, cinematic]);
   useEffect(() => {
     if (!loading && shownScope.current !== environment) {
@@ -335,16 +345,16 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
   }
 
   return <section className="constellation spatial-atlas" ref={section} aria-labelledby="constellation-title"
-    data-scan={loading ? 'idle' : scan.tone} data-loading={loading || undefined} data-critical={chosen?.severity === 'CRITICAL' || undefined}>
+    data-destination={destination || 'overview'} data-scan={loading ? 'idle' : scan.tone} data-loading={loading || undefined} data-critical={chosen?.severity === 'CRITICAL' || undefined}>
     <div className="spatial-world" ref={stage} inert={loading} aria-hidden={loading || undefined}>
       <div className="constellation-visual spatial-visual" ref={positioner} onPointerMove={point} onPointerLeave={leavePointer}>
         {show3D ? <SceneBoundary onFailure={loseScene}>
-          <Suspense fallback={map}>
+          <Suspense fallback={<><img className="stage-poster" alt="" src={stagePoster(location.reel)} />{map}</>}>
             <Scene graph={graph} selected={chosen?.id} preview {...{ select, visible, command, scanToken, director, cinematic }}
               scope={loading ? shownScope.current : environment} showLinks labels={labels} onFailure={loseScene} onHover={hoverResource}
-              beginCameraIntro={beginCameraIntro} />
+              beginCameraIntro={beginCameraIntro} reel={location.reel} />
           </Suspense>
-        </SceneBoundary> : all.length ? map : <div className="constellation-void" aria-hidden="true" />}
+        </SceneBoundary> : <><img className="stage-poster" alt="" src={stagePoster(location.reel)} />{map}</>}
         {show3D && <div className="topology-labels" hidden={loading} aria-hidden="true" ref={labels}>
           {graph.platforms.slice(0, 6).map(group => <span key={group.id} hidden>{group.label}</span>)}
         </div>}
@@ -359,7 +369,7 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
           setSelection(null);
           setCommand({ action: 'reset' });
         }}><Crosshair size={17} /></button>}
-        {!!all.length && !failed && <button type="button" className="constellation-mode" disabled={loading} onClick={() => {
+        {!failed && <button type="button" className="constellation-mode" disabled={loading} onClick={() => {
           leavePointer();
           setFlat(!flat);
         }}>{flat ? '3D view' : '2D view'}</button>}
@@ -368,9 +378,15 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
       </div>
     </div>
     <div className="spatial-title">
-      <h2 id="constellation-title">Cloud <em>Atlas</em></h2>
+      <h2 id="constellation-title">{location.title} <em>{location.accent}</em></h2>
       <p>{loading ? 'Loading selected environment' : all.length ? all.length + ' discovered resources' : 'Awaiting inventory'}</p>
-      <Link className="text-link spatial-topology-link" to="/workspace/topology">Explore topology <Layers3 size={15} /></Link>
+      <a className="text-link spatial-topology-link" href="#workspace-operations" onClick={async event => {
+        event.preventDefault();
+        if (document.fullscreenElement === section.current) await document.exitFullscreen();
+        const panel = document.getElementById('workspace-operations');
+        panel?.focus({ preventScroll: true });
+        panel?.scrollIntoView({ behavior: cinematic ? 'smooth' : 'instant' });
+      }}>{destination ? 'Open operations' : 'Operations ledger'} <Layers3 size={15} /></a>
     </div>
     {!loading && <div className="spatial-inspection">
       {chosen ? <div className="constellation-selection spatial-selection" key={chosen.id}>
@@ -383,6 +399,11 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
           if (document.fullscreenElement === section.current) void document.exitFullscreen();
           open({ type: 'asset', id: chosen.id, topology: true });
         }}>Resource details</button>
+        {chosen.findings.slice(0, 2).map(finding => <button className="text-link spatial-finding" type="button" key={finding.id}
+          onClick={() => {
+            if (document.fullscreenElement === section.current) void document.exitFullscreen();
+            open({ type: 'finding', id: finding.id });
+          }}>{finding.title}</button>)}
       </div> : null}
       {focusNodes.length > 0 && <label className="spatial-focus">
         <span className="sr-only">Focus resource</span>
@@ -410,9 +431,6 @@ export function SpatialOverview({ data, open, scan, scanToken, environment, intr
       <div className="constellation-footer">
         <span>{failed ? '3D unavailable · 2D view' : all.length > graph.nodes.length ? graph.nodes.length + ' shown' :
           show3D ? 'Drag to orbit' : all.length ? 'Select a resource' : 'No observed resources'}</span>
-        <a className="text-link" href="#overview-ledger" onClick={() => {
-          if (document.fullscreenElement === section.current) void document.exitFullscreen();
-        }}>Operations ledger ↓</a>
       </div>
     </div>
   </section>;

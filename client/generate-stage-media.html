@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CloudSentinel stage media generator</title>
+<canvas width="512" height="288"></canvas>
+<script>
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+const { width, height } = canvas;
+const TAU = Math.PI * 2;
+
+function frame(style, t) {
+  const horizon = height * .48;
+  const vanishing = width * (.5 + Math.sin(t * TAU) * .06);
+  const base = ctx.createRadialGradient(vanishing, horizon, 0, vanishing, horizon, width * .63);
+  base.addColorStop(0, style === 'trace' ? '#32536a' : '#345587');
+  base.addColorStop(1, '#050811');
+  ctx.fillStyle = base; ctx.fillRect(0, 0, width, height);
+
+  for (let i = 15; i >= 0; i--) {
+    const distance = i + 1 + (1 - t) * 4;
+    const scale = 1.28 / distance;
+    const edge = width * .83 * scale;
+    const top = horizon - 154 * scale;
+    const bottom = horizon + 120 * scale;
+    ctx.strokeStyle = 'rgba(139,190,242,' + (.79 - i * .038) + ')';
+    ctx.lineWidth = Math.max(.45, 3.4 * scale);
+    if (style === 'vault') {
+      const inset = edge * .24;
+      ctx.fillStyle = i % 2 === 0 ? '#121f36' : '#1b2b45';
+      ctx.fillRect(vanishing - edge, top, inset, bottom - top);
+      ctx.fillRect(vanishing + edge - inset, top, inset, bottom - top);
+      ctx.strokeRect(vanishing - edge, top, edge * 2, bottom - top);
+      for (let row = 1; row < 7; row++) {
+        const y = top + (bottom - top) * row / 7;
+        line(vanishing - edge, y, vanishing - edge + inset * .75, y);
+        line(vanishing + edge - inset * .75, y, vanishing + edge, y);
+      }
+    } else {
+      const sides = style === 'trace' ? 6 : 8;
+      ctx.beginPath();
+      for (let n = 0; n <= sides; n++) {
+        const a = n / sides * TAU + t * TAU * (style === 'trace' ? 1 : -1);
+        const x = vanishing + Math.cos(a) * edge;
+        const y = horizon + Math.sin(a) * edge * .5;
+        n === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  for (let i = 0; i < 58; i++) {
+    const phase = (i * .619 + t * (style === 'trace' ? -1 : 1) + 1) % 1;
+    const x = vanishing + Math.cos(i * 8.2) * width * phase ** 2;
+    const y = horizon + Math.sin(i * 19.3) * height * phase ** 2;
+    ctx.fillStyle = 'rgba(170,213,255,' + (.095 + phase * .35) + ')';
+    ctx.fillRect(x, y, 1 + phase * 1.35, 1 + phase * .8);
+  }
+  if (style === 'vault') {
+    ctx.strokeStyle = '#82b9f175';
+    ctx.lineWidth = 1;
+    for (const edge of [-1, 1]) {
+      line(vanishing, horizon, width * (.5 + edge * .49), height * .88);
+      line(vanishing, horizon, width * (.5 + edge * .49), height * .085);
+    }
+  }
+  const beam = ctx.createLinearGradient(0, horizon - 28, 0, horizon + 28);
+  beam.addColorStop(0, '#83b2ff00'); beam.addColorStop(.5, '#83b2ff23'); beam.addColorStop(1, '#83b2ff00');
+  ctx.fillStyle = beam; ctx.fillRect(0, horizon - 28, width, 56);
+}
+
+function line(x, y, endX, endY) {
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(endX, endY); ctx.stroke();
+}
+
+window.recordTransmission = async (style) => {
+  frame(style, .18);
+  const poster = canvas.toDataURL('image/webp', .84);
+  const stream = canvas.captureStream(24);
+  const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 250000 });
+  const chunks = [];
+  const completed = new Promise(resolve => { recorder.onstop = resolve; });
+  recorder.ondataavailable = event => chunks.push(event.data);
+  recorder.start();
+  const start = performance.now();
+  await new Promise(resolve => {
+    const draw = now => {
+      const progress = (now - start) / 4400;
+      if (progress >= 1) { resolve(); return; }
+      frame(style, progress);
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  });
+  recorder.stop();
+  await completed;
+  stream.getTracks().forEach(track => track.stop());
+  const video = await new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(new Blob(chunks, { type: 'video/webm' }));
+  });
+  return { poster, video };
+};
+</script>

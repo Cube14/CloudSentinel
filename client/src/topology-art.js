@@ -13,7 +13,7 @@ function alloy(parts) {
   return geometry;
 }
 
-function shield() {
+function networkJunction() {
   const outline = new THREE.Shape();
   outline.moveTo(-.29, .27);
   outline.lineTo(.29, .27);
@@ -31,20 +31,26 @@ export function buildResource(type) {
   let body;
   let edges;
   if (type === 'storage') {
-    const levels = [-.16, .025, .21];
-    body = [plinth, ...levels.map(y => drum(.29, .14, y)), drum(.22, .045, .31)];
-    edges = levels.map(y => ring(.286, .014, y + .04));
+    const levels = [-.17, .035, .24];
+    body = [plinth, ...levels.flatMap(y => [
+      place(new THREE.CylinderGeometry(.29, .22, .105, 6).rotateY(Math.PI / 6), 0, y),
+      place(new THREE.CylinderGeometry(.20, .29, .065, 6).rotateY(Math.PI / 6), 0, y + .085),
+    ])];
+    edges = levels.map(y => drum(.292, .025, y + .035, 6).rotateY(Math.PI / 6));
   } else if (type === 'identity') {
-    body = [plinth, place(new THREE.OctahedronGeometry(.34).scale(.8, 1.15, .8), 0, .085)];
-    edges = [ring(.35, .016, .08), ring(.27, .012, -.175)];
+    const crystal = new THREE.OctahedronGeometry(.34).scale(.64, 1.29, .64).rotateY(.32);
+    body = [plinth, place(crystal, 0, .15), drum(.25, .048, -.19, 10)];
+    edges = [ring(.32, .012, .065).rotateX(.44), ring(.26, .012, -.145).rotateZ(-.28)];
   } else if (type === 'firewall') {
-    body = [plinth, shield(), box(.14, .24, .14, 0, -.09, -.13)];
-    edges = [box(.32, .024, .02, 0, .24, .103), box(.22, .024, .02, 0, .13, .103),
-      box(.12, .024, .02, 0, .02, .103)];
+    body = [plinth, networkJunction(), box(.14, .24, .14, 0, -.09, -.13),
+      box(.095, .38, .19, -.34, -.035, 0), box(.095, .38, .19, .34, -.035, 0)];
+    edges = [box(.32, .031, .022, 0, .19, .104), box(.17, .032, .022, 0, .06, .104),
+      box(.044, .26, .024, -.34, -.025, .101), box(.044, .26, .024, .34, -.025, .101)];
   } else {
-    const levels = [-.13, .025, .18];
-    body = [plinth, ...levels.map(y => box(.58, .115, .54, 0, y, 0)), box(.52, .043, .48, 0, .273, 0)];
-    edges = levels.flatMap(y => [box(.38, .019, .018, -.045, y, .274), box(.046, .035, .02, .21, y, .274)]);
+    const racks = [-.205, 0, .205];
+    body = [plinth, ...racks.map((x, i) => box(.155, i === 1 ? .65 : .51, .46, x, i === 1 ? .052 : -.01, 0)),
+      box(.58, .055, .45, 0, -.235, 0)];
+    edges = racks.flatMap(x => [-.13, -.025, .08, .185].map(y => box(.116, .016, .025, x, y, .232)));
   }
   return [alloy(body), alloy(edges)];
 }

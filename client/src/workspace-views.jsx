@@ -2,7 +2,6 @@ import React, { useDeferredValue, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { RevealAccent } from './reveal-accent';
-import { SpatialOverview } from './topology';
 import { indexTopology, topologyLinks } from './topology-model';
 import { Activity, Box, Clock3, Fingerprint, ListChecks, Radar, ShieldAlert } from 'lucide-react';
 import { assetKey, connections, DetailButton, Drawer, Empty, Panel, Pill, SearchField, severities, shortTime, sourceName,
@@ -63,11 +62,21 @@ function FindingRows({ data, findings, open, overview = false }) {
     }))} />;
 }
 
-export function Overview({ data, open, notices, loading, ...spatial }) {
+export function Environments({ data }) {
+  return <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{data.summary.providers.length} in scope</span>}>
+        <div className="source-list">{data.summary.providers.map(source => <div key={source.id} className="source-row">
+          <span className="source-icon"><Box size={16} strokeWidth={1.6} /></span>
+          <div><strong>{source.label}</strong><span>{sourceTypes[source.kind]} · {connections[source.connection]}</span></div>
+          <Pill value={source.status}>{statuses[source.status]}</Pill>
+          <time dateTime={source.lastSnapshot || undefined} title={'Last snapshot: ' + time(source.lastSnapshot) +
+            ' · Last attempt: ' + time(source.lastAttempt)}>{shortTime(source.lastSnapshot)}</time>
+        </div>)}</div>
+      </Panel>;
+}
+
+export function Overview({ data, open, notices }) {
   const { summary, findings, history } = data;
-  return <>
-    <SpatialOverview {...{ data, open, loading }} {...spatial} />
-    {!loading && <section className="overview-ledger" id="overview-ledger" aria-labelledby="ledger-title">
+  return <section className="overview-ledger" id="overview-ledger" aria-labelledby="ledger-title">
     <h2 id="ledger-title">Operations ledger</h2>
     {notices}
     <div className="overview-grid">
@@ -88,15 +97,7 @@ export function Overview({ data, open, notices, loading, ...spatial }) {
     </div>
     <motion.div className="overview-grid overview-details" initial={{ opacity: .78, y: 8 }} whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: .15 }} transition={{ duration: .26 }}>
-      <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{summary.providers.length} in scope</span>}>
-        <div className="source-list">{summary.providers.map(source => <div key={source.id} className="source-row">
-          <span className="source-icon"><Box size={16} strokeWidth={1.6} /></span>
-          <div><strong>{source.label}</strong><span>{sourceTypes[source.kind]} · {connections[source.connection]}</span></div>
-          <Pill value={source.status}>{statuses[source.status]}</Pill>
-          <time dateTime={source.lastSnapshot || undefined} title={'Last snapshot: ' + time(source.lastSnapshot) +
-            ' · Last attempt: ' + time(source.lastAttempt)}>{shortTime(source.lastSnapshot)}</time>
-        </div>)}</div>
-      </Panel>
+      <Environments data={data} />
       <Panel title="Priority findings" icon={ShieldAlert} action={<Link to="/workspace/findings" className="text-link">View all findings</Link>}>
         <FindingRows data={data} open={open} overview findings={sortedFindings(findings)
           .filter(f => ['CRITICAL', 'HIGH'].includes(f.severity)).slice(0, 4)} />
@@ -108,8 +109,7 @@ export function Overview({ data, open, notices, loading, ...spatial }) {
           <><Pill value={run.status}>{statuses[run.status]}</Pill>{run.error && <small className="failed-text">{run.error}</small>}</>, run.findings]
       }))} />
     </Panel>
-    </section>}
-  </>;
+  </section>;
 }
 
 export function Findings({ data, open, identity = false }) {

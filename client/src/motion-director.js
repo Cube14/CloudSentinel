@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 
 const rest = { energy: 0, wipe: 0, shift: 0, critical: 0, sweep: -1 };
 const scenes = {
+  destination: { energy: .60, shift: -.66, anticipation: .085, release: .54 },
   entrance: { energy: .18, shift: .24, anticipation: .06, release: .74 },
   environment: { energy: .27, shift: -.32, anticipation: .09, release: .60 },
   selection: { energy: .18, shift: .16, anticipation: .04, release: .48 },
@@ -85,7 +86,7 @@ function createDirector() {
         duration: .64, ease: 'power3.out', clearProps: '--route-reveal' });
       const entrance = detail.length > 0 && gsap.fromTo(detail, { y: 7, opacity: .66 }, { y: 0, opacity: 1,
         duration: .34, stagger: .045, clearProps: 'transform,opacity', ease: 'power2.out' });
-      return () => { tween.kill(); if (entrance) entrance.kill(); element.style.removeProperty('--route-reveal'); };
+      return () => { tween.kill(); if (entrance) { entrance.kill(); gsap.set(detail, { clearProps: 'transform,opacity' }); } element.style.removeProperty('--route-reveal'); };
     },
     travel(onUpdate, duration) {
       if (!enabled) { onUpdate(1); return; }

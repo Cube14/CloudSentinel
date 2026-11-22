@@ -17,7 +17,7 @@ const root = path.resolve(__dirname, '..');
 const clientDir = path.join(root, 'client', 'dist');
 const safe = value => typeof value === 'string' && value.trim().length > 0 && value.length < 128;
 const assetTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
-  '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.txt': 'text/plain' };
+  '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.txt': 'text/plain', '.webm': 'video/webm', '.webp': 'image/webp' };
 
 function json(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -50,7 +50,7 @@ async function serveClient(res, pathname) {
   if (!type) return json(res, 404, { error: 'Not found' });
   try {
     const body = await fs.readFile(filename);
-    res.writeHead(200, { 'Content-Type': type.startsWith('font/') ? type : type + '; charset=utf-8',
+    res.writeHead(200, { 'Content-Type': /^(font|video|image)\//.test(type) ? type : type + '; charset=utf-8',
       'Cache-Control': asset && !pathname.endsWith('.txt') && pathname !== '/mark.svg'
         ? 'public, max-age=31536000, immutable' : 'no-cache' });
     return res.end(body);

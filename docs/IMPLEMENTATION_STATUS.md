@@ -1,5 +1,17 @@
 # Implementation status
 
+## Persistent workspace stage
+
+The same WebGL canvas and camera now carry Overview, Environments, Topology, Findings, Assets, Identity, Threats, AI Analyst, and Audit. Each route has a camera pose and a matching procedural reel. The operational panel stays in document flow and can be reached from the stage or by scrolling. Findings open their existing records with evidence and recommendations. Resource geometry and links retain the existing inventory and provenance rules.
+
+Visual review sampled both local reference recordings. Aircord moves from sparse titles into a curved media surface, holds the footage, then enters an editorial story before returning to the stage. The previous CloudSentinel recording keeps the Atlas on Overview and switches to distinct table screens. The revised stage uses a single camera and curved display across those routes with original graphics and workspace controls.
+
+Three silent WebM reels and WebP posters were rendered from `client/generate-stage-media.html`. They are decorative atmosphere. Playback starts for the visible active reel and stops when offscreen or when effects are disabled. Reduced-motion and reduced-data preferences use stills. The server update adds static MIME types for the bundled assets.
+
+Edge on the RTX 4060 Laptop GPU verified the same canvas across all eight destination changes, browser Back, moving footage, fullscreen, a critical resource pick, finding recommendations, scan confirmation, Ollama evidence, offscreen pause, and forced WebGL loss. Overview and Topology screenshots cover 390, 768, 1440, and 1920 CSS pixels. During the recorded navigation sample, browser frame intervals measured 6.1 ms median and 18.1 ms p95. Browser QA used isolated fixture data. The seven-second recording and screenshots are in `results/stage-qa/`.
+
+The four targeted tests, all 32 tests, and the production build passed. The benchmark matched 21 of 21 synthetic scenarios. The build reports the existing size warning for the 255 kB gzip lazy WebGL chunk.
+
 ## Spatial Cloud Atlas
 
 The authenticated Overview puts the API-backed atlas first, with fullscreen, selectable inventory, a keyboard resource picker, a posture HUD, and the existing tables in an operations ledger. Scope changes stage the outgoing camera while the selected snapshot loads. GSAP coordinates camera movement, shader accents, manual scan cues, and incident reveals. Motion remains available for small UI transitions. The effects switch and OS reduced-motion preference disable cinematic cues. Mobile defaults to the selectable 2D map, and WebGL context loss falls back to that map.

@@ -60,7 +60,7 @@ function Analyst({ status, report, working, disabled, run, admin, director, cine
   </Panel>;
 }
 
-function Incident({ incident, source, admin, api, environment, update, analyst, director, cinematic }) {
+function Incident({ incident, source, admin, api, environment, update, analyst, director, cinematic, analystFirst }) {
   const [selected, setSelected] = useState(0);
   const [report, setReport] = useState(null);
   const [proposed, setProposed] = useState('');
@@ -99,7 +99,7 @@ function Incident({ incident, source, admin, api, environment, update, analyst, 
     finally { setBusy(''); }
   }
 
-  return <article className="incident-workspace">
+  return <article className={'incident-workspace' + (analystFirst ? ' analyst-first' : '')}>
     <div className="incident-heading">
       <div><p className="eyebrow"><Radar size={15} /> {source}</p><h2>{incident.actor}</h2><p>{incident.summary}</p></div>
       <div className="incident-identity"><Pill value={incident.severity} /><code>{incident.id}</code></div>
@@ -158,7 +158,7 @@ function Incident({ incident, source, admin, api, environment, update, analyst, 
   </article>;
 }
 
-export function Threats({ data, admin, api, environment, update, reportError, director, cinematic }) {
+export function Threats({ data, admin, api, environment, update, reportError, director, cinematic, analystFirst }) {
   const [replaying, setReplaying] = useState(false);
   const inventoryOnly = data.summary.providers.every(source => source.kind !== 'fixture');
   const analyst = useAnalyst(api, !inventoryOnly && data.incidents.length > 0);
@@ -174,7 +174,7 @@ export function Threats({ data, admin, api, environment, update, reportError, di
     {admin && <button className="button secondary replay" onClick={replay} disabled={replaying}>
       <RotateCcw size={16} />{replaying ? 'Replaying…' : 'Replay fixture events'}</button>}
     {data.incidents.length ? data.incidents.map(incident => <Incident key={incident.id + JSON.stringify(incident.events)}
-      source={sourceName(data, incident.environment)} {...{ incident, admin, api, environment, update, analyst, director, cinematic }} />)
+      source={sourceName(data, incident.environment)} {...{ incident, admin, api, environment, update, analyst, director, cinematic, analystFirst }} />)
       : <Panel title="Incident evidence" icon={Radar}><Empty title="No incidents in this environment." /></Panel>}
   </>;
 }

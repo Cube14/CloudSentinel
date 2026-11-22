@@ -4,6 +4,7 @@ import { Color, Mesh, Object3D, OrthographicCamera, PlaneGeometry, Scene, Shader
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useReducedMotion } from 'motion/react';
 import { buildResource, waveVertex, waveFragment, impactFragment, atlasFloorFragment, auraFragment } from './topology-art';
+import { StageMedia } from './stage-media';
 import { topologyTypes } from './topology-model';
 
 const cameraSettings = { position: [18, 23, 28], fov: 40, near: .1, far: 2000 };
@@ -16,6 +17,13 @@ function viewportDistance(camera, aspect, graph) {
   const radius = Math.hypot(graph.width, graph.depth) / 2;
   const vertical = Math.tan(camera.fov * Math.PI / 360);
   return Math.max(12, radius / (vertical * Math.min(1, aspect)) * .86);
+}
+
+function destinationPose(location, distance) {
+  const { azimuth, elevation, distance: scale } = location;
+  const horizontal = Math.cos(elevation);
+  return new Vector3(Math.sin(azimuth) * horizontal, Math.sin(elevation), Math.cos(azimuth) * horizontal)
+    .multiplyScalar(distance * scale);
 }
 
 function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview, beginCameraIntro, director, cinematic }) {
@@ -85,7 +93,9 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
       travel(target, home, 1.28);
       return;
     }
-    travel(target, home);
+    if (command?.action === 'destination') {
+      travel(new Vector3(0, 1.05, -1.3), destinationPose(command.location, distance.current), .94);
+    } else travel(target, home);
   }, [width, depth, size.width, size.height, reduced, scope, compact, preview, beginCameraIntro, cinematic]);
 
   useEffect(() => {
@@ -98,6 +108,10 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
 
   useEffect(() => {
     if (!command || !controls.current) return;
+    if (command.action === 'destination') {
+      travel(new Vector3(0, 1.05, -1.3), destinationPose(command.location, distance.current), .94);
+      return;
+    }
     if (command.action === 'reset') {
       travel(new Vector3(), homeDirection.clone().multiplyScalar(distance.current));
       return;
@@ -273,8 +287,10 @@ function SpatialLens({ director }) {
 
   useFrame(({ gl, scene, camera, size }) => {
     const { energy, wipe, shift, x, y, aim } = director.frame;
-    if (Math.abs(shift * energy) >= .005) {
-      camera.setViewOffset(size.width, size.height, shift * energy * 22, 0, size.width, size.height);
+    const pan = shift * energy * 22 + x * aim * 9;
+    const tilt = y * aim * 6;
+    if (Math.abs(pan) + Math.abs(tilt) >= .05) {
+      camera.setViewOffset(size.width, size.height, pan, tilt, size.width, size.height);
     } else if (camera.view?.enabled) camera.clearViewOffset();
     if (energy < .005 && wipe < .005 && (aim < .015 || Math.abs(x) + Math.abs(y) < .01)) {
       gl.render(scene, camera);
@@ -411,7 +427,7 @@ function Marker({ node, current, director }) {
   </mesh>;
 }
 
-function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview, beginCameraIntro, director, cinematic, onHover }) {
+function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview, beginCameraIntro, director, cinematic, onHover, reel }) {
   const reduced = useReducedMotion() || cinematic === false;
   const pulse = useRef(null);
   const [hovered, setHovered] = useState(null);
@@ -438,6 +454,7 @@ function Field({ graph, selected, select, visible, command, labels, showLinks, o
     <CameraRig width={graph.width} depth={graph.depth} selected={nodes.get(selected)?.position}
       reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} beginCameraIntro={beginCameraIntro} director={director} cinematic={cinematic} />
     <Platforms graph={graph} atlas={preview} />
+    {reel && <StageMedia reel={reel} active={!reduced} alive={visible} width={graph.width} depth={graph.depth} />}
     {preview && <ResourceAuras nodes={graph.nodes} />}
     <Atmosphere width={graph.width} depth={graph.depth} compact={compact} director={cinematic ? director : null} />
     {preview && cinematic && !reduced && <SpatialLens director={director} />}
@@ -455,7 +472,7 @@ const graphIsDense = graph => graph.nodes.length > 140;
 export default memo(function TopologyScene(props) {
   const [compact] = useState(() => matchMedia('(max-width: 620px)').matches);
   return <Canvas className="topology-webgl" aria-hidden="true" frameloop={props.visible ? 'demand' : 'never'}
-    dpr={compact || graphIsDense(props.graph) ? 1 : [1, 1.35]} camera={cameraSettings} gl={{ antialias: !compact, alpha: false, powerPreference: 'default' }}>
+    dpr={compact || navigator.hardwareConcurrency <= 4 || graphIsDense(props.graph) ? 1 : [1, 1.35]} camera={cameraSettings} gl={{ antialias: !compact, alpha: false, powerPreference: 'default' }}>
     <color attach="background" args={['#0a1220']} />
     <fogExp2 attach="fog" args={['#0a1220', .009 / Math.max(1, props.graph.depth / 18)]} />
     <Field {...props} compact={compact} />
