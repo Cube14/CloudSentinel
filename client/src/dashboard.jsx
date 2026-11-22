@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { RevealAccent } from './reveal-accent';
 import { constellationState } from './constellation-state';
@@ -51,7 +51,9 @@ export function Dashboard({ user, api, onLogout }) {
   const [fetchError, setFetchError] = useState('');
   const [actionError, setActionError] = useState(null);
   const [scanning, setScanning] = useState(null);
+  const [settledScan, setSettledScan] = useState(null);
   const [sweep, setSweep] = useState(null);
+  const overviewIntro = useRef({ titlePlayed: false, cameraPlayed: false });
   const [refresh, setRefresh] = useState(0);
   const [record, setRecord] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
@@ -80,21 +82,25 @@ export function Dashboard({ user, api, onLogout }) {
       } catch (error) {
         if (!controller.signal.aborted) setFetchError(error.message);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 2000);
+        if (!controller.signal.aborted) {
+          if (settledScan) setScanning(current => current === settledScan ? null : current);
+          timer = setTimeout(poll, 2000);
+        }
       }
     }
     poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [api, environment, refresh]);
+  }, [api, environment, refresh, settledScan]);
 
   function reportError(message) { setActionError({ environment, message }); }
   async function run() {
-    setScanning(environment);
-    setSweep({ scope: environment, at: performance.now() });
+    const request = { scope: environment, at: performance.now() };
+    setScanning(request);
+    setSweep(request);
     setActionError(null);
     try { await api(scope('/api/scans/run', environment), {}); }
     catch (error) { reportError(error.message); }
-    finally { setScanning(null); update(); }
+    finally { setSettledScan(request); }
   }
   async function logout() {
     try { await onLogout(); }
@@ -110,17 +116,10 @@ export function Dashboard({ user, api, onLogout }) {
   const incomplete = data?.summary.providers.filter(source => source.coverage === 'partial' || source.warnings?.length) || [];
   const selectedSource = environments.find(source => source.id === environment);
   const active = data?.summary.providers.some(source => ['running', 'queued'].includes(source.status));
-  const requesting = scanning === environment;
+  const requesting = scanning?.scope === environment;
   const state = fetchError ? 'Disconnected' : selectedSource?.status === 'not-connected' ? 'Not connected' :
     active ? 'Scan running' : requesting ? 'Requesting scan' : failures.length || incomplete.length ? 'Source issues' :
       selectedSource?.connection === 'configured' ? 'Awaiting scan' : data ? 'Connected' : 'Connecting';
-
-  useEffect(() => {
-    if (!active || requesting) return;
-    const at = performance.now();
-    setSweep(previous => previous?.scope === environment && at - previous.at < 1550 ?
-      previous : { scope: environment, at });
-  }, [active, environment]);
 
   const scan = constellationState({
     requesting, active, failed: !!(scopeError || failures.length), partial: !!incomplete.length,
@@ -169,7 +168,7 @@ export function Dashboard({ user, api, onLogout }) {
           <span><Clock3 size={16} /> Last successful scan <strong>{time(data?.summary.lastScan)}</strong></span>
           <span>{active ? 'Scan in progress' : requesting ? 'Requesting scan…' : selectedSource?.scanEnabled === false ? 'Not connected' :
             selectedSource?.schedule === false ? 'Manual scans only' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
-          {active && <span className="loading-line" />}
+          {requesting && <span className="loading-line" />}
         </div>
         {destination && destination !== 'topology' && sourceNotices}
         {(scopeError || fetchError) && <div className="feedback error" role="alert"><CircleAlert size={18} />
@@ -178,7 +177,7 @@ export function Dashboard({ user, api, onLogout }) {
           initial={{ opacity: .68, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: .65 }} transition={{ duration: .15 }}>
           <RevealAccent />
           <Routes location={location}>
-            <Route index element={<Overview data={data} open={setRecord} notices={sourceNotices} {...{ scan, scanToken, environment }} />} />
+            <Route index element={<Overview data={data} open={setRecord} notices={sourceNotices} intro={overviewIntro} {...{ scan, scanToken, environment }} />} />
             <Route path="topology" element={<Topology data={data} open={setRecord} {...{ active, scan, scanToken, environment }} />} />
             <Route path="findings" element={<Findings data={data} open={setRecord} />} />
             <Route path="assets" element={<Assets data={data} open={setRecord} />} />

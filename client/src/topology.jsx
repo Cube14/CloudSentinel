@@ -1,7 +1,7 @@
 import React, { Component, lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { RevealAccent } from './reveal-accent';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Box, Crosshair, Layers3, List, Minus, Plus, Waypoints } from 'lucide-react';
 import { connections, Empty, Pill, SearchField, sourceName, sourceTypes, statuses, time } from './workspace-ui';
 import { indexTopology, layoutTopology, topologyTypes, visibleNodes } from './topology-model';
@@ -38,7 +38,7 @@ function AssetList({ nodes, selected, select, query }) {
   const currentPage = Math.min(page, pages - 1);
   useEffect(() => setPage(0), [query]);
   return nodes.length ? <>
-    <ul className="topology-inventory" aria-label="Topology resources">
+    <ul className="topology-inventory" aria-label="Topology resources" tabIndex={0}>
       {nodes.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(node =>
         <li key={node.id}><button type="button" aria-pressed={selected === node.id} onClick={() => select(node.id)}>
           <Box size={16} strokeWidth={1.6} /><span><strong>{node.asset.name}</strong><small>{describe(node)}</small></span>
@@ -56,19 +56,25 @@ function AssetList({ nodes, selected, select, query }) {
 function Inspector({ node, open }) {
   return <div className="topology-inspector reveal-host">
     <AnimatePresence mode="wait" initial={false}>
-      {node ? <motion.div key={node.id} initial={{ opacity: 0, x: 7 }} animate={{ opacity: 1, x: 0 }}
+      {node ? <motion.div className="topology-inspector-selection" key={node.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
         exit={{ opacity: 0 }} transition={{ duration: .16 }}>
         <RevealAccent />
         <p className="eyebrow">Selected resource</p>
-        <h2>{node.asset.name}</h2>
-        <p>{describe(node)} · {sourceTypes[node.asset.source]}</p>
-        {node.asset.stale && <p>Last known inventory</p>}
+        <div className="topology-inspector-body" tabIndex={0} role="region" aria-label="Selected resource evidence">
+          <h2>{node.asset.name}</h2>
+          <p>{describe(node)} · {sourceTypes[node.asset.source]}</p>
+          {node.asset.stale && <p>Last known inventory</p>}
+          {node.findings.length > 0 && <ul className="topology-evidence">
+            {node.findings.slice(0, 3).map((finding, index) => <li key={finding.id}>
+              {finding.title}{index === 0 && finding.evidence && <small>{finding.evidence}</small>}
+            </li>)}
+          </ul>}
+        </div>
         <motion.div className="topology-risk" key={node.findings.map(f => [f.id, f.severity, f.stale].join(':')).join('|')}
           initial={{ opacity: .58 }} animate={{ opacity: 1 }}>
           {node.severity && <Pill value={node.severity} />}
           <span>{node.findings.length} observed open {node.findings.length === 1 ? 'finding' : 'findings'}</span>
         </motion.div>
-        {!!node.findings.length && <p className="topology-evidence">{node.findings[0].title} · {node.findings[0].evidence}</p>}
         <button type="button" className="button secondary small" onClick={() => open({ type: 'asset', id: node.id, topology: true })}>
           Open resource details
         </button>
@@ -221,7 +227,15 @@ function PreviewMap({ graph, assets, selected, select }) {
   </svg>;
 }
 
-export function TopologyPreview({ data, open, scan, scanToken, environment }) {
+export function TopologyPreview({ data, open, scan, scanToken, environment, intro }) {
+  const reduced = useReducedMotion();
+  const [revealTitle] = useState(() => !reduced && !intro.current.titlePlayed);
+  useEffect(() => { intro.current.titlePlayed = true; }, [intro]);
+  const beginCameraIntro = useCallback(() => {
+    if (intro.current.cameraPlayed) return false;
+    intro.current.cameraPlayed = true;
+    return true;
+  }, [intro]);
   const stage = useRef(null);
   const labels = useRef(null);
   const visible = useStageVisibility(stage);
@@ -241,38 +255,42 @@ export function TopologyPreview({ data, open, scan, scanToken, environment }) {
   const map = <PreviewMap graph={graph} assets={assets} selected={chosen && selection.id} select={select} />;
   const show3D = activated && !flat && !failed && !!all.length;
 
-  return <section className="constellation" aria-labelledby="constellation-title" data-scan={scan.tone}>
-    <div className="constellation-stage" ref={stage}>
-      {show3D ? <SceneBoundary onFailure={loseScene}>
-        <Suspense fallback={map}>
-          <Scene graph={graph} selected={chosen && selection.id} preview {...{ select, visible, command, scanToken }}
-            scope={environment} showLinks labels={labels} onFailure={loseScene} />
-        </Suspense>
-      </SceneBoundary> : all.length ? map : <div className="constellation-void" aria-hidden="true" />}
-      {show3D && <div className="topology-labels" aria-hidden="true" ref={labels}>
-        {graph.platforms.slice(0, 6).map(group => <span key={group.id} hidden>{group.label}</span>)}
-      </div>}
-    </div>
+  return <section className={'constellation' + (revealTitle ? ' constellation-intro' : '')} aria-labelledby="constellation-title" data-scan={scan.tone}>
     <div className="constellation-copy">
       <p className="eyebrow"><Waypoints size={15} /> Cloud inventory</p>
-      <h2 id="constellation-title">Cloud<br />constellation</h2>
+      <h2 id="constellation-title"><span>Cloud</span>{' '}<span>constellation</span></h2>
       <p>{all.length ? <><strong>{all.length}</strong> discovered {all.length === 1 ? 'resource' : 'resources'}</> :
         'Inventory appears after a source returns its first snapshot.'}</p>
       <Link className="button secondary small" to="/workspace/topology">Explore topology <Layers3 size={15} /></Link>
     </div>
-    <div className="constellation-tools" aria-label="Constellation controls">
-      {show3D && <button type="button" className="icon-button" aria-label="Reset constellation camera" onClick={() => {
-        setSelection(null);
-        setCommand({ action: 'reset' });
-      }}><Crosshair size={17} /></button>}
-      {!!all.length && !failed && <button type="button" className="constellation-mode" onClick={() => setFlat(!flat)}>
-        {flat ? '3D view' : '2D view'}
-      </button>}
+    <div className="constellation-stage">
+      <div className="constellation-tools" aria-label="Constellation controls">
+        {show3D && <button type="button" className="icon-button" aria-label="Reset constellation camera" onClick={() => {
+          setSelection(null);
+          setCommand({ action: 'reset' });
+        }}><Crosshair size={17} /></button>}
+        {!!all.length && !failed && <button type="button" className="constellation-mode" onClick={() => setFlat(!flat)}>
+          {flat ? '3D view' : '2D view'}
+        </button>}
+      </div>
+      <div className="constellation-visual" ref={stage}>
+        {show3D ? <SceneBoundary onFailure={loseScene}>
+          <Suspense fallback={map}>
+            <Scene graph={graph} selected={chosen && selection.id} preview {...{ select, visible, command, scanToken }}
+              scope={environment} beginCameraIntro={beginCameraIntro} showLinks labels={labels} onFailure={loseScene} />
+          </Suspense>
+        </SceneBoundary> : all.length ? map : <div className="constellation-void" aria-hidden="true" />}
+        {show3D && <div className="topology-labels" aria-hidden="true" ref={labels}>
+          {graph.platforms.slice(0, 6).map(group => <span key={group.id} hidden>{group.label}</span>)}
+        </div>}
+      </div>
     </div>
     {chosen && <div className="constellation-selection reveal-host" key={chosen.id}>
       <RevealAccent />
-      <strong>{chosen.name}</strong>
-      <small>{sourceName(data, chosen.environment)} · {sourceTypes[chosen.source]}</small>
+      <div>
+        <strong>{chosen.name}</strong>
+        <small>{sourceName(data, chosen.environment)} · {sourceTypes[chosen.source]}</small>
+      </div>
       <button type="button" className="text-link" onClick={() => open({ type: 'asset', id: selection.id, topology: true })}>Resource details</button>
     </div>}
     <div className="constellation-footer">

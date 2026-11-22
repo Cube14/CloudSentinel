@@ -1,9 +1,9 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Color, Object3D, Vector3 } from 'three';
+import { Color, Mesh, Object3D, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial, Vector3, WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useReducedMotion } from 'motion/react';
-import { buildResource, waveVertex, waveFragment } from './topology-art';
+import { buildResource, waveVertex, waveFragment, impactFragment } from './topology-art';
 import { topologyTypes } from './topology-model';
 
 const cameraSettings = { position: [18, 23, 28], fov: 40, near: .1, far: 2000 };
@@ -18,7 +18,7 @@ function viewportDistance(camera, aspect, graph) {
   return Math.max(12, radius / (vertical * Math.min(1, aspect)) * .86);
 }
 
-function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview }) {
+function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview, beginCameraIntro }) {
   const { camera, gl, invalidate, size } = useThree();
   const controls = useRef(null);
   const move = useRef(null);
@@ -50,6 +50,7 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     const orbit = controls.current;
     if (!orbit) return;
     if (reduced) {
+      move.current = null;
       orbit.target.copy(target);
       camera.position.copy(position);
       orbit.update();
@@ -65,9 +66,17 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     controls.current.maxDistance = distance.current * 2.15;
     const target = new Vector3();
     const home = homeDirection.clone().multiplyScalar(distance.current * (compact ? .87 : 1));
-    if (!reduced) camera.position.copy(home).applyAxisAngle(verticalAxis, -.44).multiplyScalar(1.24);
+    if (visible && !reduced && beginCameraIntro?.()) {
+      const offset = target.clone().set(.6, -.45, 0);
+      camera.position.copy(home).applyAxisAngle(verticalAxis, -.7).multiplyScalar(1.38);
+      camera.position.y *= .62;
+      controls.current.target.copy(offset);
+      move.current = { target, position: home, start: camera.position.clone(), offset, elapsed: 0 };
+      invalidate();
+      return;
+    }
     travel(target, home);
-  }, [width, depth, size.width, size.height, reduced, scope, compact, preview]);
+  }, [width, depth, size.width, size.height, reduced, scope, compact, preview, beginCameraIntro]);
 
   useEffect(() => {
     if (selectedX === undefined || !controls.current) return;
@@ -105,7 +114,15 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     const orbit = controls.current;
     if (!orbit) return;
     const next = move.current;
-    if (next) {
+    if (next?.start) {
+      next.elapsed += Math.min(delta, .04);
+      const fraction = Math.min(1, next.elapsed / 1.12);
+      const ease = 1 - (1 - fraction) ** 3;
+      camera.position.lerpVectors(next.start, next.position, ease);
+      orbit.target.lerpVectors(next.offset, next.target, ease);
+      if (fraction < 1) invalidate();
+      else move.current = null;
+    } else if (next) {
       const step = 1 - Math.exp(-Math.min(.05, Math.max(delta, .001)) * 10);
       camera.position.lerp(next.position, step);
       orbit.target.lerp(next.target, step);
@@ -226,6 +243,56 @@ function ScanSweep({ width, depth, token, pulse, reduced }) {
   </mesh>;
 }
 
+function ScanImpact({ token }) {
+  const pass = useRef(null);
+  const sizedFor = useRef(null);
+  useEffect(() => () => {
+    if (!pass.current) return;
+    const { surface, plane } = pass.current;
+    surface.dispose();
+    plane.geometry.dispose();
+    plane.material.dispose();
+    pass.current = null;
+  }, []);
+
+  useFrame(({ gl, scene, camera, size, invalidate }) => {
+    const elapsed = (performance.now() - token) / 310;
+    if (elapsed >= 1) {
+      gl.render(scene, camera);
+      return;
+    }
+    if (!pass.current) {
+      const surface = new WebGLRenderTarget(1, 1);
+      const stage = new Scene();
+      const canvasCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const plane = new Mesh(new PlaneGeometry(2, 2), new ShaderMaterial({
+        vertexShader: waveVertex,
+        fragmentShader: impactFragment,
+        uniforms: { image: { value: surface.texture }, elapsed: { value: 0 }, aspect: { value: 1 } },
+        depthTest: false,
+        depthWrite: false,
+      }));
+      stage.add(plane);
+      pass.current = { surface, stage, canvasCamera, plane };
+    }
+    const { surface, stage, canvasCamera, plane } = pass.current;
+    if (sizedFor.current !== token) {
+      const scale = Math.min(1, 740 / Math.max(size.width, size.height));
+      surface.setSize(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
+      sizedFor.current = token;
+    }
+    plane.material.uniforms.elapsed.value = elapsed;
+    plane.material.uniforms.aspect.value = size.width / size.height;
+    gl.setRenderTarget(surface);
+    gl.render(scene, camera);
+    gl.setRenderTarget(null);
+    gl.render(stage, canvasCamera);
+    invalidate();
+  }, 1);
+
+  return null;
+}
+
 function Platforms({ graph }) {
   const borders = useMemo(() => new Float32Array(graph.platforms.flatMap(({ x, z, width, depth }) => {
     const y = -.017;
@@ -288,7 +355,7 @@ function Marker({ node, current }) {
   </mesh>;
 }
 
-function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview }) {
+function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview, beginCameraIntro }) {
   const reduced = useReducedMotion();
   const pulse = useRef(null);
   const [hovered, hover] = useState(null);
@@ -301,9 +368,10 @@ function Field({ graph, selected, select, visible, command, labels, showLinks, o
     <directionalLight color="#eff7ff" intensity={3.4} position={[2, 7, 12]} />
     <directionalLight color="#558aeb" intensity={2} position={[-9, 6, -7]} />
     <CameraRig width={graph.width} depth={graph.depth} selected={nodes.get(selected)?.position}
-      reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} />
+      reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} beginCameraIntro={beginCameraIntro} />
     <Platforms graph={graph} />
     <Atmosphere width={graph.width} depth={graph.depth} compact={compact} />
+    {preview && !reduced && scanToken != null && <ScanImpact token={scanToken} />}
     <ScanSweep width={graph.width} depth={graph.depth} token={scanToken} pulse={pulse} reduced={reduced} />
     {showLinks && <References graph={graph} nodes={nodes} />}
     {batches.map(([type, items]) => !!items.length && <ResourceBatch key={type} nodes={items} type={type} select={select} hover={hover} pulse={pulse} depth={graph.depth} />)}

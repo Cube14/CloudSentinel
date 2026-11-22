@@ -68,3 +68,29 @@ export const waveFragment = `
     gl_FragColor = vec4(.42, .68, .94, (.65 * beam + .14 * glow) * edge);
   }
 `;
+
+export const impactFragment = `
+  varying vec2 coords;
+  uniform sampler2D image;
+  uniform float elapsed;
+  uniform float aspect;
+
+  void main() {
+    vec2 offset = coords - vec2(.53, .52);
+    vec2 radial = offset * vec2(aspect, 1.);
+    float distanceToCenter = length(radial);
+    float falloff = 1. - smoothstep(0., 1., elapsed);
+    float radius = .10 + elapsed * .86;
+    float delta = distanceToCenter - radius;
+    float displacement = exp(-delta * delta * 49.);
+    vec2 bent = clamp(coords + offset * displacement * falloff * .34, .002, .998);
+    vec3 field = texture2D(image, bent).rgb;
+    float rim = exp(-delta * delta * 1296.);
+    float crest = 1. - smoothstep(.04, .42, elapsed);
+    field = mix(field, field * vec3(.42, .58, .8), .55 * crest);
+    field += vec3(.21, .41, .67) * rim * crest * .42;
+    gl_FragColor = vec4(field, 1.);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;

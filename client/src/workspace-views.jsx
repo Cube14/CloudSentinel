@@ -63,10 +63,10 @@ function FindingRows({ data, findings, open, overview = false }) {
     }))} />;
 }
 
-export function Overview({ data, open, scan, scanToken, environment, notices }) {
+export function Overview({ data, open, scan, scanToken, environment, notices, intro }) {
   const { summary, findings, history } = data;
   return <>
-    <TopologyPreview {...{ data, open, scan, scanToken, environment }} />
+    <TopologyPreview {...{ data, open, scan, scanToken, environment, intro }} />
     {notices}
     <div className="overview-grid">
       <section className="risk-sheet" aria-labelledby="posture-title">

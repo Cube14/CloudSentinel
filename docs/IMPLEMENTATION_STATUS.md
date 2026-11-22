@@ -4,13 +4,15 @@
 
 Verified November 23, 2026. Authenticated Overview and Topology share a procedural 3D scene drawn from inventory and finding snapshots. Compute racks, storage stacks, identity crystals, and network shields use instanced geometry. Inventory stays grouped by provider, environment, and type. Lines represent collected same-source, same-region security group attachments or ingress references.
 
-Manual requests and observed active scans trigger a short visual sweep over existing inventory. Scan status and outcomes use API data. One shared shader animates decorative accents in navigation, findings, and evidence panels. Incident evidence has previous and next controls that preserve original event order and recorded fields.
+Manual scan requests trigger a short visual sweep over existing inventory. Overview adds a one-time camera and title entrance and a 310 ms scene-only impact pass on manual scans. Scheduled scans update API status without a sweep. The manual request indicator stays visible until the post-scan dashboard refresh settles. One shared shader animates decorative accents in navigation, findings, and evidence panels. Incident evidence has previous and next controls that preserve original event order and recorded fields.
 
 The scene loads separately, draws on demand, and pauses offscreen or in hidden tabs. Overview displays up to 36 nodes. Topology displays up to 320 nodes and 640 recorded references, with the full index available in its searchable list. DPR is capped at 1.35 on desktop and 1 on mobile or dense scenes. Narrow screens default to the SVG map or list, and both views fall back to those controls after context loss. Reduced motion disables the sweep and camera easing.
 
 - Targeted tests passed 4 of 4. Full `npm test` passed 32 of 32. The synthetic benchmark matched 21 of 21 scenarios across all 12 posture rules.
 - `npm run build` passed with Vite's size warning on the lazy scene chunk, approximately 252 kB gzip.
 - Authenticated Edge 158 on the RTX 4060 Laptop GPU exercised mesh picking, real Floci inventory, scan requests, incident navigation, keyboard evidence, and forced WebGL context loss in both views. No JavaScript, console, or CSP errors in the passing smoke. Reviewed 390, 1440, and 1920 CSS-pixel screenshots and improved mobile risk markers and Overview warning placement. Mobile sizes were emulated. The browser smoke used fixture and local emulator data.
+
+The visual QA pass used an isolated fixture with a 245-character resource name, three actual scanner findings for that resource, and a scrollable index. Both views were checked in Edge at 390, 768, 1440, and 1920 CSS pixels. The selected resource now has its own Overview grid row. The Topology details control and finding count stay outside the scrollable evidence area, and the index has its own scroll region. Edge confirmed the request state persisted during a delayed dashboard response. Forced WebGL loss fell back in both views. On the RTX 4060 Laptop GPU the settled scene issued zero draw calls while idle and through a scheduled scan. Reduced motion skipped the impact render pass. The four targeted tests, all 32 tests, and the production build passed. The lazy scene chunk is 253 kB gzip. Captures are stored locally in `results/visual-qa/`.
 
 ## Named cloud connectors
 

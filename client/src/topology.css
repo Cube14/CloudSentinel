@@ -9,9 +9,10 @@
 .topology-mode button:hover:not(:disabled){color:#edf2fa}
 .topology-filters{justify-content:flex-start;margin-bottom:12px}.topology-filters .search-field{max-width:390px}
 .topology-count{margin-inline-start:auto;color:#94a8c5;font-size:.82rem;white-space:nowrap}
-.topology-board{display:grid;grid-template-columns:minmax(0,1fr) minmax(235px,295px);min-height:530px;
+.topology-board{--board-height:clamp(560px,64vh,690px);display:grid;grid-template-columns:minmax(0,1fr) minmax(235px,295px);
+  grid-template-rows:var(--board-height);
   border:1px solid var(--topology-line);border-radius:11px;overflow:hidden;background:#151d2b}
-.topology-stage{position:relative;isolation:isolate;min-width:0;min-height:530px;background:#0b111b;display:grid;place-items:center}
+.topology-stage{position:relative;isolation:isolate;min-width:0;min-height:0;overflow:hidden;background:#0b111b;display:grid;place-items:center}
 .topology-stage[hidden]{display:none}
 .topology-canvas,.topology-labels{position:absolute;inset:0}.topology-webgl,.topology-webgl canvas{width:100%;height:100%}
 .topology-webgl canvas{cursor:grab;touch-action:none}.topology-webgl canvas:active{cursor:grabbing}
@@ -28,17 +29,24 @@
 @media(pointer:coarse),(max-width:620px){
  .topology-mouse-hint{display:none}.topology-touch-hint{display:inline}
 }
-.topology-review{min-width:0;border-left:1px solid var(--topology-line);display:flex;flex-direction:column;max-height:620px}
+.topology-review{min-width:0;min-height:0;border-left:1px solid var(--topology-line);display:grid;
+  grid-template-rows:auto auto minmax(0,1fr) auto;overflow:hidden}
+.topology-inspector-selection{display:grid;gap:8px;min-width:0;min-height:0}
+.topology-inspector-body{min-width:0;max-height:142px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+  scrollbar-color:#4a6685 #182538;padding:2px 6px 3px 2px}
+.topology-inspector-body:focus-visible,.topology-inventory:focus-visible{outline-offset:-2px}
 .topology-inspector{padding:14px;min-height:114px;border-bottom:1px solid var(--topology-line);background:#182538;min-width:0}
 .topology-inspector .eyebrow{font-size:.67rem}.topology-inspector h2{font-family:var(--display);font-size:1.38rem;
   font-weight:630;line-height:1.12;overflow-wrap:anywhere;margin:7px 0}
 .topology-inspector p:not(.eyebrow){color:#aac0db;font-size:.81rem;line-height:1.5;overflow-wrap:anywhere}
 .topology-inspector-empty{display:flex;align-items:center;gap:9px;min-height:82px}.topology-inspector-empty svg{color:#a6d8f5;flex:none}
-.topology-risk{margin:8px 0;display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.76rem}
-.topology-evidence{margin-bottom:10px}.topology-inspector button{margin-top:4px}
+.topology-risk{margin:0;display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.76rem}
+.topology-evidence{margin:0;padding-inline-start:1rem;color:#bdd0e9;font-size:.76rem;line-height:1.5}
+.topology-evidence small{display:block;color:#a8bfd9;font-size:.72rem}
+.topology-inspector button{justify-self:start;max-width:100%;white-space:normal}
 .topology-list-header{padding:12px 11px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--topology-line)}
 .topology-list-header h2{font-family:var(--display);font-size:1.03rem;margin:0}.topology-list-header span{font-size:.79rem;color:#94a8c5}
-.topology-inventory{list-style:none;margin:0;padding:5px;min-height:0;overflow:auto;scrollbar-color:#3d5673 #152132}
+.topology-inventory{list-style:none;margin:0;padding:5px;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-color:#3d5673 #152132}
 .topology-inventory button{width:100%;min-height:52px;display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:8px;
   text-align:left;padding:6px;border:1px solid transparent;background:none;color:#edf2fa;border-radius:5px}
 .topology-inventory button:hover,.topology-inventory button[aria-pressed=true]{background:#263750;border-color:#466685}
@@ -46,7 +54,7 @@
 .topology-inventory strong{font-size:.81rem;line-height:1.3}.topology-inventory small{margin-top:4px;color:#a4bad5;font-size:.72rem;line-height:1.35}
 .topology-inventory svg{color:#a6d8f5}
 .topology-pagination{display:flex;justify-content:space-between;align-items:center;gap:5px;padding:7px;border-top:1px solid var(--topology-line);font-size:.75rem}
-.topology-list-mode{display:block;min-height:0}.topology-list-mode .topology-review{border-left:0;max-height:none}
+.topology-list-mode{display:block;min-height:0}.topology-list-mode .topology-review{border-left:0;grid-template-rows:auto auto auto auto}
 .topology-list-mode .topology-inventory{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;overflow:visible}
 .topology-legend{justify-content:flex-start;flex-wrap:wrap;margin:11px 0 6px;color:#bfd0e8;font-size:.8rem}
 .topology-legend label{display:flex;align-items:center;gap:5px}.topology-key{display:inline-flex;align-items:center;gap:6px}
@@ -70,7 +78,7 @@
 .topology-preview-map g{cursor:pointer;outline:none}.topology-preview-map g:is(:hover,:focus-visible,[aria-pressed=true]) .preview-hit{fill:#38536e;stroke:#d5eaff}
 @media(max-width:940px){
  .topology-board{grid-template-columns:minmax(0,1fr) minmax(218px,255px)}
- .topology-stage,.topology-board{min-height:440px}.topology-review{max-height:540px}
+ .topology-board{--board-height:560px}
 
 }
 @media(max-width:690px){
@@ -78,38 +86,46 @@
  .nav-group a,.workspace-collapsed .nav-group a{flex:1 0 calc((100% - 24px) / 7);font-size:.65rem}
  .topology-heading{align-items:flex-start;flex-direction:column;gap:8px}.topology-filters{flex-wrap:wrap;gap:7px}
  .topology-filters .search-field{flex-basis:100%;max-width:none}.topology-count{margin-left:auto}
- .topology-board{display:block;min-height:0}
- .topology-stage{min-height:350px}.topology-review{border-left:0;max-height:none}
- .topology-board:not(.topology-list-mode) .topology-inventory{max-height:265px}
  .topology-list-mode .topology-inventory{grid-template-columns:1fr}
- .topology-board:not(.topology-list-mode) .topology-review{border-top:1px solid var(--topology-line)}
-
-
-
 }
 
-.constellation{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(235px,.54fr) minmax(0,1fr);
-  grid-template-rows:minmax(clamp(375px,27vw,470px),1fr) auto;min-width:0;margin-bottom:18px;border:1px solid #354962;
+@media(max-width:820px){
+  .topology-board{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto}
+  .topology-stage{min-height:clamp(310px,55vw,420px)}
+  .topology-review{grid-template-rows:auto auto auto auto;border-left:0}
+  .topology-board:not(.topology-list-mode) .topology-inventory{max-height:265px}
+  .topology-board:not(.topology-list-mode) .topology-review{border-top:1px solid var(--topology-line)}
+}
+
+.constellation{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,.62fr) minmax(0,1fr);
+  grid-template-areas:"copy stage" "selection selection" "footer footer";
+  grid-template-rows:minmax(clamp(375px,29vw,490px),auto) auto auto;min-width:0;margin-bottom:18px;border:1px solid #354962;
   border-radius:13px;overflow:hidden;background:#0a1220;box-shadow:0 20px 65px -48px #749cdb}
-.constellation-stage{position:relative;grid-column:2;grid-row:1;min-width:0;background:#0a1220;display:grid;place-items:center}
-.constellation-stage::after{content:"";position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(90deg,#0a1220,transparent 17%),linear-gradient(0deg,#0a1220bc,transparent 23%),linear-gradient(180deg,#0a122094,transparent 24%)}
+.constellation-stage{grid-area:stage;position:relative;isolation:isolate;min-width:0;min-height:0;overflow:hidden;
+  display:grid;grid-template-rows:auto minmax(0,1fr);background:#0a1220}
+.constellation-visual{grid-row:2;position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden}
+.constellation-visual .topology-webgl{position:absolute;inset:0}
+.constellation-visual::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,#0a1220,transparent 14%),linear-gradient(0deg,#0a1220ac,transparent 23%),
+    radial-gradient(ellipse at 58% 46%,#789fd026,transparent 69%)}
 .constellation-void{width:100%;height:100%;background:radial-gradient(ellipse at 60% 46%,#192b45,transparent 64%)}
-.constellation-copy{grid-column:1;grid-row:1;align-content:center;z-index:1;min-width:0;padding:clamp(20px,3vw,52px)}
-.constellation-copy h2{font-family:var(--display);font-size:clamp(2.25rem,4.1vw,5rem);line-height:.93;letter-spacing:-.08em;
-  margin:12px 0 18px;font-weight:625;color:#edf2fa}
+.constellation-copy{grid-area:copy;align-content:center;min-width:0;padding:clamp(20px,3vw,52px)}
+.constellation-copy h2{font-family:var(--display);font-size:clamp(2.25rem,4.05vw,5rem);line-height:.93;letter-spacing:-.08em;
+  margin:12px 0 18px;font-weight:625;color:#edf2fa;overflow-wrap:anywhere}
+.constellation-copy h2 span{display:block}
 .constellation-copy p:not(.eyebrow){font-size:.9rem;color:#a9bdd8;line-height:1.5;margin-bottom:20px}
 .constellation-copy p strong{color:#edf2fa;font-variant-numeric:tabular-nums}
 .constellation-copy .button{gap:12px}
-.constellation-tools{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:5px;z-index:2}
+.constellation-tools{grid-row:1;display:flex;justify-content:flex-end;gap:5px;padding:10px 12px 0}
 .constellation-mode,.constellation-tools .icon-button{background:#101a29;border:1px solid #3a516c;border-radius:5px;color:#d6e7fb;
   font-size:.76rem;min-width:36px;min-height:36px;padding:5px 9px}
 .constellation-mode:hover,.constellation-tools .icon-button:hover{background:#20344d}
-.constellation-selection{position:absolute;right:14px;bottom:54px;z-index:2;max-width:min(52%,290px);display:grid;gap:4px;
-  background:#101a29;border:1px solid #3b5473;padding:10px 12px;border-radius:7px;overflow-wrap:anywhere}
-.constellation-selection strong{font-size:.9rem}.constellation-selection small{color:#a7bdd8}
+.constellation-selection{grid-area:selection;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+  gap:6px 16px;padding:10px clamp(14px,2vw,24px);background:#101a29;border-top:1px solid #354962;overflow-wrap:anywhere}
+.constellation-selection strong,.constellation-selection small{display:block}.constellation-selection strong{font-size:.9rem}
+.constellation-selection small{color:#a7bdd8;margin-top:4px}
 .constellation-selection button{background:none;border:0;padding:0;justify-self:start;text-align:left}
-.constellation-footer{grid-column:1/-1;display:flex;justify-content:space-between;gap:7px 12px;flex-wrap:wrap;padding:11px 15px;
+.constellation-footer{grid-area:footer;display:flex;justify-content:space-between;gap:7px 12px;flex-wrap:wrap;padding:11px 15px;
   border-top:1px solid #2e415b;color:#a9bdd8;font-size:.76rem;background:#0d1725}
 .constellation-state{display:inline-flex;align-items:center;gap:7px;animation:constellation-arrive .3s ease-out;color:#c5d9f2}
 .constellation-state i{width:7px;height:7px;border-radius:50%;background:currentColor}
@@ -121,16 +137,19 @@
 .dashboard-view,.reveal-host{position:relative}
 .reveal-accent{position:absolute;inset:0 0 auto;width:100%;height:14px;z-index:2;pointer-events:none}
 .constellation-stage .topology-labels span{background:#101a2c;border-color:#425e82}
-@media(max-width:860px){
-  .constellation{grid-template-columns:minmax(175px,.66fr) minmax(0,1fr);grid-template-rows:minmax(300px,1fr) auto}
+@media(prefers-reduced-motion:no-preference){
+  .constellation-intro .constellation-copy h2 span{animation:constellation-type .65s cubic-bezier(.19,1,.26,1) both}
+  .constellation-intro .constellation-copy h2 span+span{animation-delay:.12s}
+  .constellation-intro .constellation-copy .eyebrow{animation:constellation-arrive .42s ease-out both}
 }
-@media(max-width:620px){
-  .constellation{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 220px auto auto}
-  .constellation-copy{grid-row:1;padding:19px 16px 0}.constellation-copy h2{font-size:2.6rem;margin:8px 0}
-  .constellation-copy p:not(.eyebrow){margin-bottom:12px}.constellation-stage{grid-column:1;grid-row:2}
-  .constellation-stage::after{background:none}
+@keyframes constellation-type{from{opacity:.18;transform:translate3d(0,16px,0) rotateX(-12deg)}}
+@media(max-width:820px){
+  .constellation{grid-template-areas:"copy" "stage" "selection" "footer";grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto}
+  .constellation-copy{padding:19px 16px 0}.constellation-copy h2{font-size:clamp(2.6rem,6vw,3.8rem);margin:8px 0}
+  .constellation-copy p:not(.eyebrow){margin-bottom:12px}
+  .constellation-visual{min-height:clamp(220px,45vw,320px)}
+  .constellation-visual::after{background:radial-gradient(ellipse at 58% 46%,#678abd18,transparent 69%)}
   .topology-preview-map{padding:12px;height:auto;max-height:100%}
-  .constellation-selection{position:relative;grid-row:3;max-width:none;right:auto;bottom:auto;margin:0 12px 10px}
-  .constellation-tools{right:10px;top:10px}.constellation-footer{grid-row:4}
+  .constellation-selection{grid-template-columns:minmax(0,1fr)}
 }
 @media(prefers-reduced-motion:reduce){.constellation-state{animation:none}.reveal-accent{display:none}}
