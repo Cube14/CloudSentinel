@@ -1,22 +1,31 @@
-# Architecture and threat model
+# Architecture
 
 ```mermaid
-flowchart TD
-    A[AWS JSON simulation] --> D[Normalized assets]
-    B[Azure JSON simulation] --> D
-    C[GCP JSON simulation] --> D
-    D --> E[Deterministic CSPM + IAM checks]
-    E --> F[Node HTTP API]
-    G[Normalized synthetic events] --> H[Event grouping and attack-chain correlation]
-    H --> F
-    F --> I[Dashboard polling every 15 seconds]
-    F --> J[Optional localhost Ollama Qwen3 8B]
-    F --> K[Human-approved simulated response]
-    K --> L[In-memory audit log]
+flowchart LR
+    A[AWS, Azure and GCP JSON fixtures] --> B[Normalized inventory]
+    F[Local AWS Floci SDK collector] --> B
+    B --> C[Deterministic posture rules]
+    C --> S[Per-environment snapshot and scan history]
+    E[Fixture and manually submitted lab events] --> G[Deterministic event correlation]
+    G --> H[Local HTTP API]
+    S --> H
+    H --> I[Dashboard polling every two seconds]
+    H --> J[Optional loopback Ollama suggestions]
+    H --> K[Simulated response audit]
 ```
 
-**Trust boundary:** The simulator produces data; no real cloud control plane is accessed. The web interface is only bound to `127.0.0.1`. Inputs are validated partially and should not be exposed to untrusted clients. The AI only receives incident evidence and is not authorized to execute actions. Actions never touch cloud infrastructure.
+The application listens on IPv4 loopback. Requests must carry a loopback host, and browser POSTs must come from the same origin. The collector only accepts an explicit HTTP loopback endpoint. AWS SDK v3 requests use dummy credentials, a fixed `us-east-1` region, an explicit endpoint and a collection deadline. The application collector only reads inventory and posture.
 
-The asset adapter boundary normalizes `storage`, `firewall`, `identity`, and `compute` resources across provider-specific examples. The normalized model enables shared checks, but does not imply equivalence between AWS IAM policy evaluation, Azure RBAC, and Google Cloud IAM; the initial IAM rule is an intentionally simplified demonstration.
+| Floci API scope | Normalized evidence |
+| --- | --- |
+| S3 `ListBuckets`, `GetBucketPolicyStatus`, `GetBucketEncryption` | Bucket names, reported public policy status and default encryption algorithms |
+| IAM `ListUsers`, `ListAttachedUserPolicies`, `GetLoginProfile`, `ListMFADevices` | Users, directly attached policies, console login and modeled MFA devices |
+| EC2 `DescribeSecurityGroups`, `DescribeInstances` | Group ingress with ports, protocols, and CIDRs, plus instance state, reported public IP and associated groups |
 
-Rules are defined in `security-engine/engine.js`. Findings come from current asset fields, not pre-stored results. Event correlation groups by provider, environment and actor and examines activity in the most recent 15-minute window relative to the latest event in each group. This may miss longer attack sequences or cross-identity attack paths.
+Documented operation support was checked against upstream and the project exercised Floci 2.5.0. [S3 operations](https://github.com/floci-io/floci/blob/2.5.0/docs/services/s3.md) · [IAM operations](https://github.com/floci-io/floci/blob/2.5.0/docs/services/iam.md) · [EC2 operations](https://github.com/floci-io/floci/blob/2.5.0/docs/services/ec2.md)
+
+Startup, the periodic scheduler, and API requests share one scan queue. The queue coalesces requests for the same environment. Each attempt publishes one successful snapshot after normalization and assessment. Failed collection records its own status and error and preserves the inventory, findings, and last successful time. The dashboard reads one scoped snapshot per poll. An environment with no successful inventory has null counts. A successful empty inventory has zero counts.
+
+Finding IDs hash provider, environment, resource type and ID, and rule ID. Repeated findings retain first-detected time and update last-seen time. If a finding disappears from a successful snapshot it resolves, then reopens under the same ID if it recurs. Per-environment timeline entries retain the most recent 30 attempts. Scan state, resolution history, events, and audit entries are held in process memory.
+
+The event engine groups events by provider, environment and actor over a 15-minute window ending at the latest event in each group. Incident summaries and observations are derived from stored events. Ollama receives a concise evidence set and may supply tentative hypotheses and verification steps; it cannot create recorded observations, change severities, or run actions.

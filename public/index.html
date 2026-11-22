@@ -1,1 +1,39 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CloudSentinel | Security Operations</title><link rel="stylesheet" href="/style.css"></head><body><aside><div class="brand"><span class="shield">◈</span> CLOUD<span>SENTINEL</span></div><small>SECURITY OPERATIONS</small><nav><button data-tab="dashboard" class="active">▦ &nbsp; Overview</button><button data-tab="findings">⚑ &nbsp; Findings</button><button data-tab="assets">⬡ &nbsp; Asset Inventory</button><button data-tab="iam">♙ &nbsp; IAM Analyzer</button><button data-tab="incidents">⌁ &nbsp; Threat Detection</button><button data-tab="audit">☷ &nbsp; Audit Trail</button></nav><div class="aside-foot">LOCAL SIMULATION<br><span class="live">●</span> Monitoring active</div></aside><main><header><div><p class="eyebrow">CLOUD SECURITY COMMAND CENTER</p><h1 id="pageTitle">Security Overview</h1><p class="sub">AWS, Azure and Google Cloud • deterministic security assessments</p></div><div class="actions"><span id="updated">—</span><button id="scan" class="primary">↻ Run Scan</button></div></header><div class="notice">SIMULATION MODE — Configurations are local test fixtures. No real cloud accounts are being scanned.</div><section id="view"></section><footer>CloudSentinel MVP • Evidence-based findings • Auto-refresh every 15 seconds</footer></main><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CloudSentinel | Security Operations</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="shield" aria-hidden="true">◈</span> Cloud<span>Sentinel</span></div>
+    <small>SECURITY OPERATIONS</small>
+    <nav aria-label="Console views">
+      <button data-tab="dashboard" class="active" aria-current="page">Overview</button>
+      <button data-tab="findings">Findings</button>
+      <button data-tab="assets">Asset Inventory</button>
+      <button data-tab="iam">IAM Analyzer</button>
+      <button data-tab="incidents">Threat Detection</button>
+      <button data-tab="audit">Audit Trail</button>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <h1 id="pageTitle">Security Overview</h1>
+      <div class="actions">
+        <label for="environment">Environment</label>
+        <select id="environment"><option value="">All configured environments</option></select>
+        <button id="scan" class="primary">Run Scan</button>
+      </div>
+    </header>
+    <p id="updated" role="status" class="muted"></p>
+    <div id="notice" class="notice"></div>
+    <p id="error" role="alert" class="red" hidden></p>
+    <section id="view" aria-labelledby="pageTitle"></section>
+    <footer id="cadence"></footer>
+  </main>
+</body>
+</html>

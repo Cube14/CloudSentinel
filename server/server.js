@@ -1,31 +1,223 @@
 'use strict';
-const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
-const {scan,detect}=require('../security-engine/engine');
-const root=path.resolve(__dirname,'..'), fixtureDir=path.join(root,'fixtures'),publicDir=path.join(root,'public');
-const providers=['aws','azure','gcp'];let state={scans:{},events:[],incidents:[],audit:[],actions:[],lastScan:null};
-function readAssets(p){const obj=JSON.parse(fs.readFileSync(path.join(fixtureDir,p+'.json'),'utf8'));return obj.assets.map(a=>({...a,provider:p,environment:obj.environment}));}
-function rescan(){const scans={};for(const p of providers)scans[p]=scan(readAssets(p));state.scans=scans;state.lastScan=new Date().toISOString();return summary()}
-function summary(){const scans=Object.values(state.scans);const findings=scans.flatMap(s=>s.findings);return {lastScan:state.lastScan,providers:providers.map(p=>({provider:p,...state.scans[p],findings:undefined})),assets:scans.reduce((n,s)=>n+s.assets,0),findings:findings.length,critical:findings.filter(f=>f.severity==='CRITICAL').length,score:scans.length?Math.round(scans.reduce((sum,s)=>sum+(s.score||0),0)/scans.length):null,incidents:state.incidents.length};}
-function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Access-Control-Allow-Origin':'http://localhost:3000'});res.end(JSON.stringify(data));}
-async function parse(req){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>1000000)throw Error('body too large')}return raw?JSON.parse(raw):{};}
-const safe=(v)=>typeof v==='string'&&v.length>0&&v.length<128;
-async function investigate(inc){const prompt=`You are a security analyst. Only use supplied evidence, distinguish observation from inference, never invent facts. Return JSON with summary, observations (array), hypotheses (array), recommendations (array), confidence (low/medium/high). Evidence: ${JSON.stringify(inc)}`;const base=process.env.OLLAMA_URL||'http://127.0.0.1:11434';const model=process.env.OLLAMA_MODEL||'qwen3:8b';const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);try{const r=await fetch(base+'/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,prompt,stream:false,format:'json'}),signal:controller.signal});if(!r.ok)throw Error('Ollama HTTP '+r.status);const body=await r.json();const parsed=JSON.parse(body.response);return {mode:'ollama',summary:String(parsed.summary||''),observations:Array.isArray(parsed.observations)?parsed.observations:[],hypotheses:Array.isArray(parsed.hypotheses)?parsed.hypotheses:[],recommendations:Array.isArray(parsed.recommendations)?parsed.recommendations:[],confidence:['low','medium','high'].includes(parsed.confidence)?parsed.confidence:'low'};}catch(e){return {mode:'rule-based-fallback',summary:inc.summary,observations:inc.events.map(e=>`${e.action} by ${e.actor} at ${e.timestamp}`),hypotheses:['The event sequence may indicate suspicious activity; further verification is required.'],recommendations:['Verify the actor and source IP','Review policy changes and object access','Revoke credentials only after human review'],confidence:'low',warning:`Local model unavailable: ${e.message}`};}finally{clearTimeout(timer)}}
-rescan();state.events=JSON.parse(fs.readFileSync(path.join(fixtureDir,'events.json')));state.incidents=detect(state.events);
-const app=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Origin':'http://localhost:3000','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});return res.end()}
-if(u.pathname==='/api/health')return json(res,200,{status:'ok',mode:'local-simulation',providers});
-if(u.pathname==='/api/dashboard/summary')return json(res,200,summary());
-if(u.pathname==='/api/assets')return json(res,200,providers.flatMap(readAssets));
-if(u.pathname==='/api/findings')return json(res,200,Object.values(state.scans).flatMap(s=>s.findings));
-if(u.pathname==='/api/scans/latest')return json(res,200,state.scans);
-if(u.pathname==='/api/scans/run'&&req.method==='POST')return json(res,200,rescan());
-if(u.pathname==='/api/iam')return json(res,200,Object.values(state.scans).flatMap(s=>s.findings).filter(f=>f.ruleId.startsWith('IAM-')||['CSPM-006','CSPM-007'].includes(f.ruleId)));
-if(u.pathname==='/api/incidents')return json(res,200,state.incidents);
-if(u.pathname==='/api/events'&&req.method==='GET')return json(res,200,state.events);
-if(u.pathname==='/api/events'&&req.method==='POST'){const body=await parse(req);if(!safe(body.actor)||!safe(body.action)||!safe(body.provider)||!providers.includes(body.provider)||!Number.isFinite(Date.parse(body.timestamp)))return json(res,400,{error:'Invalid event'});const event={...body,eventId:'EVT-'+Date.now()};state.events.push(event);state.incidents=detect(state.events);return json(res,201,{event,incidents:state.incidents})}
-if(u.pathname==='/api/simulations/run'&&req.method==='POST'){state.events=JSON.parse(fs.readFileSync(path.join(fixtureDir,'events.json')));state.incidents=detect(state.events);return json(res,200,{events:state.events.length,incidents:state.incidents});}
-if(u.pathname==='/api/audit')return json(res,200,state.audit);
-const match=u.pathname.match(/^\/api\/incidents\/([^/]+)\/(investigate|respond)$/);if(match&&req.method==='POST'){const inc=state.incidents.find(i=>i.id===match[1]);if(!inc)return json(res,404,{error:'Unknown incident'});if(match[2]==='investigate')return json(res,200,await investigate(inc));const body=await parse(req);if(!['approve','reject'].includes(body.decision)||!['DISABLE_ACCESS_KEY','REMOVE_POLICY','QUARANTINE_INSTANCE'].includes(body.action)||!safe(body.approvedBy))return json(res,400,{error:'Invalid response request'});const log={id:'AUD-'+Date.now(),incidentId:inc.id,decision:body.decision,action:body.action,approvedBy:body.approvedBy,environment:'simulation',status:body.decision==='approve'?'SIMULATED_SUCCESS':'REJECTED',timestamp:new Date().toISOString()};state.audit.push(log);return json(res,201,log)}
-if(req.method!=='GET')return json(res,404,{error:'Not found'});const pathname=u.pathname==='/'?'/index.html':u.pathname;const target=path.resolve(publicDir,'.'+pathname);if(!target.startsWith(publicDir+path.sep))return json(res,403,{error:'Forbidden'});if(!fs.existsSync(target)||!fs.statSync(target).isFile())return json(res,404,{error:'Not found'});const ext=path.extname(target);res.writeHead(200,{'Content-Type':{'.html':'text/html','.css':'text/css','.js':'application/javascript','.svg':'image/svg+xml'}[ext]||'text/plain'});return fs.createReadStream(target).pipe(res);
-}catch(err){return json(res,err instanceof SyntaxError?400:500,{error:err.message})}});
-if(require.main===module){const port=Number(process.env.PORT||3000);app.listen(port,'127.0.0.1',()=>console.log(`CloudSentinel http://127.0.0.1:${port}`));const timer=setInterval(rescan,15000);timer.unref();}
-module.exports={app,rescan,summary};
+
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { detect } = require('../security-engine/engine');
+const { createScanner, fixtureSources, providers } = require('./scans');
+const { flociSource } = require('./floci');
+const { investigate } = require('./investigation');
+
+const root = path.resolve(__dirname, '..');
+const publicDir = path.join(root, 'public');
+const safe = value => typeof value === 'string' && value.trim().length > 0 && value.length < 128;
+const assetTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' };
+const staticPaths = new Map([['/', 'index.html'], ['/index.html', 'index.html'],
+  ['/app.js', 'app.js'], ['/style.css', 'style.css']]);
+
+function json(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(data));
+}
+
+async function parse(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+    size += chunk.length;
+    if (size > 1000000) {
+      req.resume();
+      throw Object.assign(new Error('Request body too large'), { status: 413 });
+    }
+    chunks.push(chunk);
+  }
+  const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new SyntaxError('Expected a JSON object');
+  return body;
+}
+
+function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures'), sources } = {}) {
+  const intervalMs = Number(env.SCAN_INTERVAL_MS ?? 15000);
+  if (!Number.isInteger(intervalMs) || intervalMs < 1000 || intervalMs > 2147483647) {
+    throw new Error('SCAN_INTERVAL_MS must be an integer from 1000 to 2147483647');
+  }
+  const configuredSources = sources ?? fixtureSources(fixtureDir);
+  if (!sources && env.FLOCI_ENDPOINT) configuredSources.push(flociSource(env.FLOCI_ENDPOINT));
+  const scanner = createScanner(configuredSources);
+  let events = [], incidents = [];
+  const audit = [];
+  let initial = Promise.resolve();
+  let timer;
+
+  async function loadEvents() {
+    const raw = await fs.readFile(path.join(fixtureDir, 'events.json'), 'utf8');
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
+    if (!Array.isArray(parsed)) throw new Error('Invalid event fixture');
+    const newEvents = parsed.map(event => ({ ...event, source: 'fixture' }));
+    const newIncidents = detect(newEvents);
+    events = newEvents;
+    incidents = newIncidents;
+  }
+
+  function dashboard(id) {
+    const selected = scanner.selected(id);
+    const environments = selected.map(scanner.describe);
+    const results = selected.flatMap(entry => entry.result ? [entry.result] : []);
+    const findings = results.flatMap(result => result.findings);
+    const scores = results.flatMap(result => result.score === null ? [] : [result.score]);
+    const scoped = entries => id === null ? entries : entries.filter(entry => entry.environment === id);
+    const currentIncidents = scoped(incidents);
+    const completed = environments.filter(environment => environment.lastSuccess);
+    const summary = {
+      lastScan: completed.map(environment => environment.lastSuccess).sort().at(-1) ?? null,
+      providers: environments,
+      assets: results.length ? results.reduce((total, result) => total + result.assets, 0) : null,
+      findings: results.length ? findings.length : null,
+      critical: results.length ? findings.filter(finding => finding.severity === 'CRITICAL').length : null,
+      score: scores.length ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
+      incidents: currentIncidents.length
+    };
+    return {
+      summary, intervalMs, environments: scanner.selected(null).map(scanner.describe),
+      assets: selected.flatMap(entry => entry.inventory), findings,
+      resolved: selected.flatMap(entry => entry.resolved),
+      history: selected.flatMap(entry => entry.history.map(run => ({ ...run, environment: entry.source.id })))
+        .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt)),
+      incidents: currentIncidents, events: scoped(events),
+      audit: id === null ? audit : audit.filter(entry => entry.sourceEnvironment === id)
+    };
+  }
+
+  const app = http.createServer(async (req, res) => {
+    try {
+      const port = app.address().port;
+      const hosts = ['localhost:' + port, '127.0.0.1:' + port];
+      if (port === 80) hosts.push('localhost', '127.0.0.1');
+      if (!hosts.includes(req.headers.host) ||
+          (req.method === 'POST' && req.headers.origin && req.headers.origin !== 'http://' + req.headers.host)) {
+        return json(res, 403, { error: 'Expected a local request from this origin' });
+      }
+      const url = new URL(req.url, 'http://localhost');
+      const { pathname } = url;
+      if (req.method === 'GET' && staticPaths.has(pathname)) {
+        const filename = staticPaths.get(pathname);
+        const body = await fs.readFile(path.join(publicDir, filename));
+        res.writeHead(200, { 'Content-Type': assetTypes[path.extname(filename)] + '; charset=utf-8',
+          'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' });
+        return res.end(body);
+      }
+      const id = url.searchParams.get('environment');
+      if (id !== null && !scanner.has(id)) return json(res, 404, { error: 'Unknown environment' });
+      if (req.method === 'GET' && pathname === '/api/health') {
+        const mode = configuredSources.some(source => source.kind === 'emulator') ? 'local-mixed' : 'local-simulation';
+        return json(res, 200, { status: 'ok', mode, providers, intervalMs });
+      }
+      await initial;
+      if (req.method === 'GET') {
+        const data = dashboard(id);
+        switch (pathname) {
+          case '/api/environments': return json(res, 200, data.environments);
+          case '/api/dashboard': return json(res, 200, data);
+          case '/api/dashboard/summary': return json(res, 200, data.summary);
+          case '/api/assets': return json(res, 200, data.assets);
+          case '/api/findings': return json(res, 200, data.findings);
+          case '/api/findings/resolved': return json(res, 200, data.resolved);
+          case '/api/scans/latest':
+            return json(res, 200, Object.fromEntries(scanner.selected(id).map(entry => [
+              entry.source.kind === 'fixture' ? entry.source.provider : entry.source.id,
+              { ...scanner.describe(entry), ...entry.result }
+            ])));
+          case '/api/iam':
+            return json(res, 200, data.findings.filter(f => f.ruleId.startsWith('IAM-') ||
+              ['CSPM-006', 'CSPM-007'].includes(f.ruleId)));
+          case '/api/incidents': return json(res, 200, data.incidents);
+          case '/api/events': return json(res, 200, data.events);
+          case '/api/audit': return json(res, 200, data.audit);
+          default: return json(res, 404, { error: 'Not found' });
+        }
+      }
+
+      if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
+      if (pathname === '/api/scans/run') {
+        await scanner.run(id);
+        const { summary } = dashboard(id);
+        const failed = summary.providers.filter(source => source.status === 'failed');
+        return failed.length
+          ? json(res, 503, { ...summary, error: failed.map(source => source.label + ': ' + source.error).join(' | ') })
+          : json(res, 200, summary);
+      }
+      if (pathname === '/api/events') {
+        const body = await parse(req);
+        const environment = body.environment ?? body.provider + '-lab';
+        if (!safe(body.actor) || !safe(body.action) || !providers.includes(body.provider) ||
+            typeof body.timestamp !== 'string' || !Number.isFinite(Date.parse(body.timestamp)) ||
+            !configuredSources.some(source => source.kind === 'fixture' && source.id === environment &&
+              source.provider === body.provider) || (id !== null && id !== environment)) {
+          return json(res, 400, { error: 'Invalid fixture event' });
+        }
+        const event = { ...body, environment, eventId: 'EVT-' + randomUUID(), source: 'manual' };
+        events.push(event);
+        incidents = detect(events);
+        return json(res, 201, { event, incidents: dashboard(id).incidents });
+      }
+      if (pathname === '/api/simulations/run') {
+        await loadEvents();
+        return json(res, 200, { events: events.length, incidents });
+      }
+      const match = pathname.match(/^\/api\/incidents\/([^/]+)\/(investigate|respond)$/);
+      if (!match) return json(res, 404, { error: 'Not found' });
+      const incident = incidents.find(entry => entry.id === match[1] && (id === null || id === entry.environment));
+      if (!incident) return json(res, 404, { error: 'Unknown incident' });
+      if (match[2] === 'investigate') return json(res, 200, await investigate(incident, env));
+      const body = await parse(req);
+      if (!['approve', 'reject'].includes(body.decision) ||
+          !['DISABLE_ACCESS_KEY', 'REMOVE_POLICY', 'QUARANTINE_INSTANCE'].includes(body.action) ||
+          !safe(body.approvedBy)) return json(res, 400, { error: 'Invalid response request' });
+      const log = {
+        id: 'AUD-' + randomUUID(), incidentId: incident.id, decision: body.decision,
+        action: body.action, approvedBy: body.approvedBy, environment: 'simulation',
+        sourceEnvironment: incident.environment, status: body.decision === 'approve' ? 'SIMULATED_SUCCESS' : 'REJECTED',
+        timestamp: new Date().toISOString()
+      };
+      audit.push(log);
+      return json(res, 201, log);
+    } catch (error) {
+      return json(res, error.status || (error instanceof SyntaxError ? 400 : 500), { error: error.message });
+    }
+  });
+
+  app.on('listening', () => {
+    const fixtures = configuredSources.filter(source => source.kind === 'fixture');
+    initial = Promise.all([
+      loadEvents().catch(error => console.error('Event fixture could not be loaded:', error.message)),
+      ...fixtures.map(source => scanner.run(source.id))
+    ]);
+    scanner.run();
+    timer = setInterval(() => scanner.run(), intervalMs);
+    timer.unref();
+  });
+  app.on('close', () => clearInterval(timer));
+  return { app, rescan: () => scanner.run().then(() => dashboard(null).summary), summary: () => dashboard(null).summary };
+}
+
+const { app, rescan, summary } = createApp();
+if (require.main === module) {
+  const port = Number(process.env.PORT ?? 3000);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    console.error('PORT must be an integer from 0 to 65535.');
+    process.exitCode = 1;
+  } else {
+    app.once('error', error => {
+      console.error(error.code === 'EADDRINUSE'
+        ? 'Port ' + port + ' is already in use. Set an available port in PowerShell with $env:PORT = "3153".'
+        : 'CloudSentinel could not start: ' + error.message);
+      process.exitCode = 1;
+    });
+    app.listen(port, '127.0.0.1', () => {
+      console.log('CloudSentinel http://127.0.0.1:' + app.address().port);
+    });
+  }
+}
+
+module.exports = { app, createApp, rescan, summary };

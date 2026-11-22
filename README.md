@@ -1,105 +1,75 @@
 # CloudSentinel
 
-**AI-Assisted Multi-Cloud Security Operations — Academic MVP**
+CloudSentinel is a locally hosted security operations console for comparing posture across simulated AWS, Azure, and GCP environments and a live local AWS Floci emulator. Its deterministic rules generate findings from collected configurations. The dashboard tracks scan health, inventory, findings and resolutions, severity, scan history, and fixture-event investigations.
 
-A zero-subscription, locally hosted security assessment dashboard with deterministic AWS/Azure/GCP **simulated** cloud inventory, posture checks, IAM checks, suspicious-event correlation, optional local Ollama investigation, and approved simulated response logging.
+## Start on Windows
 
-> **Scope:** This version scans **local JSON fixtures**, not live cloud accounts. It does **not** attest to production security. The simulated configurations are intentionally vulnerable. The dashboard labels this clearly.
-
-## Zero-install-dependency quick start
-
-Requirements: Node.js 20 or higher. No npm dependencies, MongoDB, Python, Docker, or cloud account required for the primary demo.
+From the repository directory in PowerShell, with Node.js 20 or later:
 
 ```powershell
-cd cloudsentinel
+npm ci
 npm start
 ```
 
-Open **http://127.0.0.1:3000** in your browser. Start with the dashboard, open **Findings**, **IAM Analyzer**, and **Threat Detection**, then click **Investigate with local AI**.
+Open [the local console](http://127.0.0.1:3000/). If another process owns port 3000, set `$env:PORT = '3153'` before starting and open the address printed in the terminal. The three fixture environments work in an offline checkout with Node.js alone. The SDK installation is required for Floci and the full test suite.
 
-To run validations:
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | Local HTTP port |
+| `SCAN_INTERVAL_MS` | `15000` | Scheduled scan interval, minimum 1000 ms |
+| `FLOCI_ENDPOINT` | Unset | Enable the additional AWS emulator source with an HTTP loopback URL |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Optional local investigation backend |
+| `OLLAMA_MODEL` | `qwen3:8b` | Installed local model used for investigation suggestions |
+
+The dashboard polls every two seconds. **Run Scan** requests an immediate scan for the selected environment or all configured environments. Requests for an already queued or running environment share its scan. Failures are visible and the last successful inventory remains available.
+
+## Optional AWS Floci demo
+
+Start Floci in a separate PowerShell terminal. The verified Docker setup uses Floci 2.5.0, publishes only to loopback, and uses the emulator's default in-memory storage.
+
+```powershell
+docker run --detach --name cloudsentinel-floci --publish 127.0.0.1:4566:4566 floci/floci:2.5.0
+Invoke-RestMethod http://127.0.0.1:4566/_floci/health
+```
+
+In the CloudSentinel terminal:
+
+```powershell
+$env:FLOCI_ENDPOINT = 'http://localhost:4566'
+npm run test:floci
+npm run demo:floci
+npm start
+```
+
+`test:floci` reads inventory. On a fresh emulator, a default security group and zero findings are expected. Run `demo:floci` against a dedicated disposable emulator. It creates uniquely named empty S3 buckets, security groups and IAM users and checks the collector against six safe and insecure configurations. Each invocation adds resources to that emulator. Select **AWS Floci emulator** in the console. The application scanner uses only dummy credentials and read APIs. [Floci installation](https://floci.io/floci/getting-started/installation/)
+
+## Demo walkthrough
+
+1. Select each fixture environment and compare its inventory and findings.
+2. On the AWS fixture, find **Public storage access** for `customer-data`. Change its `public` value to `false` in `fixtures/aws.json` and save. Wait for the scheduled scan and dashboard poll, or click **Run Scan**. Find the same issue under **Resolved findings**. Restore the value to `true` and rescan to show it reopening.
+3. Switch to AWS Floci, if enabled, to see findings from emulator API responses. View the scan timeline and last successful timestamp.
+4. Return to the AWS fixture and open **Threat Detection**. Replay the fixture event scenario and inspect the event evidence and attack stages. Launch an investigation. Ollama supplies optional hypotheses and verification steps when reachable. The app can show a deterministic fallback.
+5. Approve a simulated response and view the audit record.
+6. Run the test suite and benchmark to show reproducible project evidence.
 
 ```powershell
 npm test
 npm run benchmark
 ```
 
-The local model is optional. If Ollama is already installed and Qwen3 8B is available, start Ollama separately. Override its model identifier via `OLLAMA_MODEL` if necessary. Default: `qwen3:8b`; endpoint: `http://127.0.0.1:11434`. The app falls back to a visibly labeled rule-based report if model access fails. No AI analysis is used to determine whether a security rule fired.
-
-## Demo walkthrough
-
-1. Run `npm start` and open the console.
-2. Observe the provider counts and findings.
-3. Click **Findings** and inspect the public AWS `customer-data` bucket.
-4. Open `fixtures/aws.json`, change `"public":true` to `"public":false` for that bucket, save, then click **Run Scan**. Confirm `CSPM-001` disappears. Restore the vulnerable setting for further demonstrations.
-5. Open **IAM Analyzer** for wildcard permissions/MFA warnings.
-6. Open **Threat Detection**. The local scenario shows access-key creation → role policy attachment → bucket listing → sensitive object access.
-7. Click **Investigate with local AI**. Observe either the Ollama result or explicitly labeled fallback.
-8. Approve a simulated response, then inspect **Audit Trail**. No real cloud actions occur.
-9. Run `npm test` and `npm run benchmark` in a terminal and show results.
-
 ## API
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/health` | Health check |
-| GET | `/api/dashboard/summary` | Summary and per-provider statistics |
-| GET | `/api/assets` | Normalized simulated inventory |
-| GET | `/api/findings` | Deterministic CSPM findings |
-| GET | `/api/scans/latest` | Scans by provider |
-| POST | `/api/scans/run` | Re-read fixture files and rescan |
-| GET | `/api/iam` | IAM-specific findings |
-| GET / POST | `/api/events` | Inspect or ingest normalized events |
-| GET | `/api/incidents` | Derived incidents |
-| POST | `/api/simulations/run` | Replay controlled synthetic event scenario |
-| POST | `/api/incidents/:id/investigate` | Ask Ollama for structured analysis |
-| POST | `/api/incidents/:id/respond` | Record explicitly approved simulated action |
-| GET | `/api/audit` | Read in-memory response history |
+Read routes accept an optional `?environment=aws-lab`, `azure-lab`, `gcp-lab`, or `aws-floci` when configured. Omitting the parameter selects all sources.
 
-### Example event ingestion
+| Method | Route | Result |
+| --- | --- | --- |
+| GET | `/api/health`, `/api/environments` | Service health and source scan status |
+| GET | `/api/dashboard`, `/api/dashboard/summary` | Scoped dashboard snapshot or summary |
+| GET | `/api/assets`, `/api/findings`, `/api/findings/resolved`, `/api/iam` | Last successful inventory and posture results |
+| GET | `/api/scans/latest` | Latest scan results by source |
+| POST | `/api/scans/run` | Scan the selected scope. Returns 503 with per-source details if a scan fails |
+| GET | `/api/events`, `/api/incidents`, `/api/audit` | Fixture and manually submitted event evidence, incidents, and simulated responses |
+| POST | `/api/events`, `/api/simulations/run` | Add a lab event or reset event history to the fixture scenario |
+| POST | `/api/incidents/:id/investigate`, `/api/incidents/:id/respond` | Optional investigation or simulated response audit entry |
 
-```powershell
-$body = @{ actor='tester'; action='CreateAccessKey'; provider='aws'; timestamp='2026-11-22T10:00:00Z'; resource='tester'; environment='aws-lab' } | ConvertTo-Json
-Invoke-RestMethod -Uri http://127.0.0.1:3000/api/events -Method POST -ContentType 'application/json' -Body $body
-```
-
-## Structure
-
-- `public/`: static web frontend (deliberately framework-free for instant zero-dependency startup)
-- `server/`: Node.js HTTP API and Ollama adapter
-- `security-engine/`: posture and threat rules
-- `fixtures/`: three synthetic cloud inventories and events
-- `tests/`: Node built-in test runner and measured synthetic benchmark
-- `docs/`: architecture, test methodology, limitations, comparative analysis
-- `.github/workflows/test.yml`: GitHub Actions validation
-
-## Automatic refresh
-
-The backend re-evaluates fixture files every **15 seconds**; the dashboard polls the API every **15 seconds**. This is periodic polling, **not push-based live event streaming**. Event ingestion triggers threat detection immediately, but incidents exist in memory until the service is restarted.
-
-## Git/GitHub on Windows
-
-Extract to a drive with enough space, e.g. `E:\Projects\cloudsentinel`, then use PowerShell:
-
-```powershell
-cd E:\Projects\cloudsentinel
-git init
-git add .
-git commit -m "feat: build CloudSentinel multi-cloud security MVP"
-git branch -M main
-```
-
-Create an empty repository called `CloudSentinel` in your GitHub account **without generating an initial README**, then:
-
-```powershell
-git remote add origin https://github.com/YOUR_USERNAME/CloudSentinel.git
-git push -u origin main
-```
-
-Replace `YOUR_USERNAME` with your actual GitHub username. The project does not require publishing secrets or real cloud credentials. GitHub Actions runs the tests on each push.
-
-## Key limitations
-
-No live cloud connectors, no Floci SDK connector, no database persistence, no user login/RBAC, no externally exposed deployment, and no independently executed Prowler/Checkov comparison. These are possible follow-on engineering milestones rather than represented as complete. Do not expose this server to the public internet; it is bound to localhost for safety.
-
-See `docs/experiments.md`, `docs/architecture.md`, and `docs/limitations.md`.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md), [architecture](docs/architecture.md), [benchmark and comparison protocol](docs/experiments.md), and [security limitations](docs/limitations.md).
