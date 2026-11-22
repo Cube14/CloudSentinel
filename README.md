@@ -30,6 +30,7 @@ Copy `.env.example` to an ignored `.env` to save settings locally. The server an
 | `PORT` | `3000` | Local HTTP port |
 | `SCAN_INTERVAL_MS` | `15000` | Scheduled scan interval, minimum 1000 ms |
 | `FLOCI_ENDPOINT` | Unset | Enable the additional AWS emulator source with an HTTP loopback URL |
+| `CLOUD_SOURCES_FILE` | Unset | Load named local definitions for AWS live, Floci, Azure, and GCP sources |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Optional local investigation backend |
 | `OLLAMA_MODEL` | `qwen3:8b` | Installed local model used for investigation suggestions |
 | `AUTH_DB_PATH` | `data/cloudsentinel.sqlite` | SQLite identities, sessions, rate limits, and audit records |
@@ -37,6 +38,8 @@ Copy `.env.example` to an ignored `.env` to save settings locally. The server an
 | `CLIENT_DEV_ORIGIN` | Unset | Explicit loopback Vite origin for proxy development |
 
 The dashboard polls every two seconds. **Run scan** requests an immediate scan for the selected environment or all configured environments. Requests for an already queued or running environment share its scan. Failures are visible and the last successful inventory remains available.
+
+Real AWS discovery is optional. Use the [cloud source setup guide](docs/cloud-sources.md) to configure a named AWS account and regional scope, apply least privilege, and enable scheduled scans if approved.
 
 The landing walkthrough explains detection, correlation, and investigation using architecture diagrams. The cloud network illustration supports mouse steering and left/right keyboard rotation. Reduced-motion settings stop automatic rotation and scroll-driven camera movement.
 

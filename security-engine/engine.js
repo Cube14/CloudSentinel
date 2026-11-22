@@ -2,7 +2,7 @@
 const {createHash}=require('node:crypto');
 const weights={CRITICAL:10,HIGH:7,MEDIUM:4,LOW:1};
 const keyHash=parts=>createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0,32);
-const finding=(ruleId,title,severity,asset,evidence,recommendation)=>({id:`FND-${keyHash([asset.provider,asset.environment,asset.type,asset.id,ruleId])}`,ruleId,title,severity,resourceId:asset.id,resource:asset.name,provider:asset.provider,environment:asset.environment,source:asset.source,evidence,recommendation,status:'OPEN',detectedAt:new Date().toISOString()});
+const finding=(ruleId,title,severity,asset,evidence,recommendation)=>({id:`FND-${keyHash([asset.provider,asset.environment,asset.type,asset.id,ruleId])}`,ruleId,title,severity,resourceId:asset.id,resource:asset.name,provider:asset.provider,environment:asset.environment,source:asset.source,region:asset.region,evidence,recommendation,status:'OPEN',detectedAt:new Date().toISOString()});
 const publicNet = r=>r==='0.0.0.0/0'||r==='::/0';
 function scan(assets){
  const findings=[];
@@ -19,13 +19,14 @@ function scan(assets){
   const exposed=(a.ingress||[]).filter(p=>[undefined,'tcp','6','-1'].includes(p.protocol) &&
    (p.protocol==='-1'||((p.fromPort??p.port)<=port&&(p.toPort??p.port)>=port)));
   const cidrs=[...new Set(exposed.flatMap(p=>(p.cidrs||[]).filter(publicNet)))].sort();
-  if(cidrs.length)add(rule,`${service} exposed to the internet`,'CRITICAL',a,`TCP port ${port}; public CIDRs: ${cidrs.join(', ')}`,'Restrict inbound access to trusted addresses');
+  if(cidrs.length)add(rule,a.source==='live'?`${service} ingress allowed from internet-wide CIDRs`:`${service} exposed to the internet`,
+   'CRITICAL',a,`TCP port ${port}; public CIDRs: ${cidrs.join(', ')}`,'Restrict inbound access to trusted addresses');
  }
  if(a.type==='identity'){
   if((a.permissions||[]).some(p=>p==='*'||p==='*:*'||p==='AdministratorAccess'))add('CSPM-006','Administrative or wildcard access','CRITICAL',a,`permissions=${JSON.stringify(a.permissions)}`,'Apply least-privilege permissions');
   if(a.mfaRequired===false)add('CSPM-007','MFA not required','HIGH',a,'mfaRequired=false','Require MFA for interactive access');
   if(a.consoleLogin===true&&a.mfaDevices===0)add('IAM-002','Console IAM user has no MFA device','HIGH',a,'GetLoginProfile: present; ListMFADevices: empty','Enroll an MFA device or remove console login');
-  if(a.adminPolicyArn)add('IAM-003','AWS AdministratorAccess policy attached','HIGH',a,`ListAttachedUserPolicies: ${a.adminPolicyArn}`,'Review the direct policy assignment and apply least privilege');
+  if(a.adminPolicyArn)add('IAM-003','AWS AdministratorAccess policy attached','HIGH',a,`ListAttached${a.identityKind==='role'?'Role':'User'}Policies: ${a.adminPolicyArn}`,'Review the direct policy assignment and apply least privilege');
   if(a.permissions?.includes('iam:PassRole') && a.permissions?.some(p=>['lambda:CreateFunction','ec2:RunInstances','*'].includes(p))) add('IAM-001','Potential privilege escalation combination','HIGH',a,`permissions=${JSON.stringify(a.permissions)}`,'Review PassRole target restrictions and service execution permissions; exploitability not proven');
  }
  if(a.type==='compute'&&a.publicIp&&a.production===true)add('CSPM-008','Production compute publicly accessible','HIGH',a,`publicIp=${a.publicIp}`,'Restrict network exposure or justify public endpoint');

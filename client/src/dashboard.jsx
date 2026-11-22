@@ -5,7 +5,7 @@ import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, Li
 import { Brand } from './brand';
 import { Assets, Audit, Findings, Overview, RecordDetails } from './workspace-views';
 import { Threats } from './workspace-threats';
-import { scope, time } from './workspace-ui';
+import { scope, sourceTypes, time } from './workspace-ui';
 import './workspace.css';
 
 const navigation = [
@@ -101,15 +101,21 @@ export function Dashboard({ user, api, onLogout }) {
   }
 
   const failures = data?.summary.providers.filter(source => source.status === 'failed') || [];
+  const disconnected = data?.summary.providers.filter(source => source.status === 'not-connected') || [];
+  const incomplete = data?.summary.providers.filter(source => source.coverage === 'partial' || source.warnings?.length) || [];
+  const selectedSource = environments.find(source => source.id === environment);
   const active = data?.summary.providers.some(source => ['running', 'queued'].includes(source.status)) || scanning === environment;
-  const state = fetchError ? 'Disconnected' : failures.length ? 'Source issues' : active ? 'Scan running' : data ? 'Connected' : 'Connecting';
+  const state = fetchError ? 'Disconnected' : selectedSource?.status === 'not-connected' ? 'Not connected' :
+    failures.length || incomplete.length ? 'Source issues' : active ? 'Scan running' :
+      selectedSource?.connection === 'configured' ? 'Awaiting scan' : data ? 'Connected' : 'Connecting';
 
   return <div className={'workspace' + (collapsed ? ' workspace-collapsed' : '')}>
     <Sidebar user={user} collapsed={collapsed} toggle={toggleSidebar} logout={logout} />
     <main className="workspace-main" id="main">
       <header className="workspace-top">
         <div className="workspace-breadcrumb">Workspace <span>/</span> {label}</div>
-        <span className="system-state"><span className={'status-dot' + (fetchError || failures.length ? ' warning-dot' : '')} />
+        <span className="system-state"><span className={'status-dot' + (fetchError || failures.length ? ' warning-dot' :
+          incomplete.length || (selectedSource && disconnected.length) ? ' coverage-dot' : '')} />
           {state}</span>
       </header>
       <div className="workspace-content">
@@ -119,19 +125,31 @@ export function Dashboard({ user, api, onLogout }) {
             <label><span>Environment</span><span className="select-wrap"><select value={environment} onChange={event => {
               setEnvironment(event.target.value); setRecord(null); setFetchError('');
             }}><option value="">All environments</option>{environments.map(source =>
-              <option key={source.id} value={source.id}>{source.label}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>
-            {admin && <button type="button" className="button primary" onClick={run} disabled={scanning !== null}><ScanLine size={17}
+              <option key={source.id} value={source.id}>{source.label} · {sourceTypes[source.kind]}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>
+            {admin && <button type="button" className="button primary" onClick={run}
+              disabled={scanning !== null || selectedSource?.scanEnabled === false}><ScanLine size={17}
               className={scanning !== null ? 'scanning-icon' : ''} />{scanning !== null ? 'Scanning…' : 'Run scan'}</button>}
           </div>
         </div>
         <div className={'scan-strip' + (active ? ' scan-active' : '')} aria-live="polite">
           <span><Clock3 size={16} /> Last successful scan <strong>{time(data?.summary.lastScan)}</strong></span>
-          <span>{active ? 'Scan in progress' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
+          <span>{active ? 'Scan in progress' : selectedSource?.scanEnabled === false ? 'Not connected' :
+            selectedSource?.schedule === false ? 'Manual scans only' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
           {active && <span className="loading-line" />}
         </div>
         {!!failures.length && <div className="feedback error" role="status"><CircleAlert size={19} /><div>
-          <strong>Scan failed. Available figures reflect the last successful snapshot.</strong>
+          <strong>Scan failed. Available figures reflect previous scan snapshots.</strong>
           {failures.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
+        {!!disconnected.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Source not connected</strong>
+          {disconnected.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
+        {!!incomplete.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Coverage warnings</strong>
+          {incomplete.map(source => <div key={source.id}>{source.label} · Latest snapshot {time(source.lastSnapshot)}
+            {source.coverage === 'partial' && ' · Unverified findings remain open.'}
+            {source.warnings?.map(warning => <div key={JSON.stringify(warning)}>
+              {[warning.service, warning.region, warning.operation, warning.code].filter(Boolean).join(' · ')}
+              {warning.count > 1 && ' × ' + warning.count}
+            </div>)}
+          </div>)}</div></div>}
         {(scopeError || fetchError) && <div className="feedback error" role="alert"><CircleAlert size={18} />
           {scopeError || ('Dashboard refresh failed: ' + fetchError)}</div>}
         {data ? <AnimatePresence mode="wait" initial={false}><motion.div className="dashboard-view" key={destination}

@@ -129,15 +129,15 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
 
 export function Threats({ data, admin, api, environment, update, reportError }) {
   const [replaying, setReplaying] = useState(false);
-  const emulator = data.summary.providers.length === 1 && data.summary.providers[0].kind === 'emulator';
-  const analyst = useAnalyst(api, !emulator && data.incidents.length > 0);
+  const inventoryOnly = data.summary.providers.every(source => source.kind !== 'fixture');
+  const analyst = useAnalyst(api, !inventoryOnly && data.incidents.length > 0);
   async function replay() {
     setReplaying(true);
     try { await api('/api/simulations/run', {}); update(); }
     catch (error) { reportError(error.message); }
     finally { setReplaying(false); }
   }
-  if (emulator) return <Panel title="Incident evidence" icon={Radar}><Empty title="Event collection is unavailable for Floci."
+  if (inventoryOnly) return <Panel title="Incident evidence" icon={Radar}><Empty title="Event collection is unavailable for this source."
     >Select a fixture environment to inspect recorded lab events.</Empty></Panel>;
   return <>
     {admin && <button className="button secondary replay" onClick={replay} disabled={replaying}>

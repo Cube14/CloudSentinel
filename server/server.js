@@ -7,6 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { detect } = require('../security-engine/engine');
 const { createScanner, fixtureSources, providers } = require('./scans');
 const { flociSource } = require('./floci');
+const { loadConnectors } = require('./connectors/config');
 const { investigate, ollamaStatus } = require('./investigation');
 const { createAuth } = require('./auth');
 const { databasePath, openStore } = require('./auth/store');
@@ -67,7 +68,10 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     throw new Error('SCAN_INTERVAL_MS must be an integer from 1000 to 2147483647');
   }
   const configuredSources = sources ?? fixtureSources(fixtureDir);
-  if (!sources && env.FLOCI_ENDPOINT) configuredSources.push(flociSource(env.FLOCI_ENDPOINT));
+  if (!sources) {
+    if (env.FLOCI_ENDPOINT) configuredSources.push(flociSource(env.FLOCI_ENDPOINT));
+    configuredSources.push(...loadConnectors(env.CLOUD_SOURCES_FILE, root, configuredSources.map(source => source.id)));
+  }
   const scanner = createScanner(configuredSources);
   const devOrigin = env.CLIENT_DEV_ORIGIN ? localEndpoint(env.CLIENT_DEV_ORIGIN) : null;
   const store = openStore(dbPath);
@@ -108,7 +112,8 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       assets: results.length ? results.reduce((total, result) => total + result.assets, 0) : null,
       findings: results.length ? findings.length : null,
       critical: results.length ? findings.filter(finding => finding.severity === 'CRITICAL').length : null,
-      score: scores.length ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
+      score: scores.length && !environments.some(source => source.coverage === 'partial')
+        ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
       incidents: currentIncidents.length
     };
     return {
@@ -144,7 +149,7 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
         return req.method === 'GET' ? await serveClient(res, pathname) : json(res, 404, { error: 'Not found' });
       }
       if (req.method === 'GET' && pathname === '/api/health') {
-        const mode = configuredSources.some(source => source.kind === 'emulator') ? 'local-mixed' : 'local-simulation';
+        const mode = configuredSources.some(source => source.kind !== 'fixture' && source.collect) ? 'local-mixed' : 'local-simulation';
         return json(res, 200, { status: 'ok', mode, providers, intervalMs });
       }
       const user = auth.authenticate(req);
@@ -186,6 +191,9 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       if (pathname === '/api/scans/run') {
         await scanner.run(id);
         const { summary } = dashboard(id);
+        if (id !== null && summary.providers[0].status === 'not-connected') {
+          return json(res, 409, { ...summary, error: summary.providers[0].error || 'Source not connected' });
+        }
         const failed = summary.providers.filter(source => source.status === 'failed');
         return failed.length
           ? json(res, 503, { ...summary, error: failed.map(source => source.label + ': ' + source.error).join(' | ') })
@@ -245,8 +253,8 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       loadEvents().catch(error => console.error('Event fixture could not be loaded:', error.message)),
       ...fixtures.map(source => scanner.run(source.id))
     ]);
-    scanner.run();
-    timer = setInterval(() => scanner.run(), intervalMs);
+    scanner.runScheduled();
+    timer = setInterval(() => scanner.runScheduled(), intervalMs);
     timer.unref();
     store.prune(Date.now());
     pruning = setInterval(() => store.prune(Date.now()), 600000);

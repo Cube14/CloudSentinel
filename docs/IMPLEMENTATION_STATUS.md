@@ -1,5 +1,15 @@
 # Implementation status
 
+## Named cloud connectors
+
+Verified November 22, 2026. The scanner supports named fixture, emulator, and live sources with separate connection and run states. Live AWS uses the SDK credential chain, verifies the configured account through STS, and reads S3, IAM, EC2 and security groups. Partial observations preserve unverified findings and do not advance the last complete scan timestamp. Named Azure and GCP sources report **NOT CONNECTED** pending adapters and credentials.
+
+- Targeted connector, Floci, and monitoring suite passed 12 of 12 tests.
+- Full `npm test` passed 28 of 28 tests, including all 23 baseline tests. AWS discovery tests use mocked SDK responses.
+- `npm run benchmark` matched all 21 synthetic scenarios across 12 posture rules. TP 16, TN 31, FP 0, FN 0.
+- `npm run build` passed. The local Floci read-only smoke passed with 20 assets and 12 findings.
+- Real AWS account verification was pending authorized credentials. See [SSO, configuration, least-privilege policy and scope](cloud-sources.md).
+
 ## Cinematic landing and SOC workspace
 
 The browser UI now uses an obsidian and midnight-blue palette with silver typography and status-specific accents. The full-height landing introduces the platform through a procedural 3D network illustration and a scroll-linked architecture walkthrough. The login and signup screens share that visual language with a split desktop layout and a static atmospheric backdrop on phones. The dashboard is prepared during sign-in and shows scoped skeletons during its first fetch.

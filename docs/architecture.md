@@ -4,6 +4,7 @@
 flowchart LR
     A[AWS, Azure and GCP JSON fixtures] --> B[Normalized inventory]
     F[Local AWS Floci SDK collector] --> B
+    L[Verified AWS account SDK collector] --> B
     B --> C[Deterministic posture rules]
     C --> S[Per-environment snapshot and scan history]
     E[Fixture and manually submitted lab events] --> G[Deterministic event correlation]
@@ -15,6 +16,8 @@ flowchart LR
 ```
 
 The application listens on IPv4 loopback and checks the request host. Browser mutations must use the same origin or an explicitly enabled loopback Vite proxy. The built React client and APIs share one origin. The collector only accepts an explicit HTTP loopback endpoint. AWS SDK v3 requests use dummy credentials, a fixed `us-east-1` region, an explicit endpoint and a collection deadline. The application collector only reads inventory and posture.
+
+The connector boundary also supports named live sources. A configured AWS account is checked with STS before inventory requests. Each scan reports its provenance, connection, coverage, and timestamps. A partial snapshot retains older findings whose conditions could not be rechecked. Azure and GCP have independent disconnected adapters. See the [cloud configuration and credential guide](cloud-sources.md).
 
 | Floci API scope | Normalized evidence |
 | --- | --- |

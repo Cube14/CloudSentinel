@@ -29,6 +29,7 @@
 .workspace-breadcrumb,.system-state{font-size:.86rem}.workspace-breadcrumb span{color:#667e9e;margin:0 8px}
 .system-state{display:flex;align-items:center;gap:8px;font-weight:700}
 .workspace .status-dot{background:#8edbd0;box-shadow:none}.workspace .warning-dot{background:#e98282}
+.workspace .coverage-dot{background:#e5af72}
 .workspace-content{max-width:1680px;margin-inline:auto;padding:34px clamp(20px,3vw,54px) 42px}
 .workspace-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:23px}
 .workspace-title .eyebrow,.incident-heading .eyebrow{color:#a2bddb}.workspace-title h1{font-family:var(--display);font-size:clamp(2.6rem,4.4vw,4.6rem);
@@ -48,6 +49,7 @@
 @keyframes scan-progress{from{transform:translateX(-115%)}to{transform:translateX(450%)}}
 .scanning-icon{animation:scan-pulse 1.05s ease-in-out infinite}@keyframes scan-pulse{50%{opacity:.4}}
 .workspace .feedback:not(.error){color:#a6ead6;background:#122b2c;border-color:#315c57}.workspace .feedback.error{background:#281c24;border-color:#673843}
+.workspace .feedback.warning{color:#fbd2aa;background:#34291f;border-color:#725741}
 .overview-grid{display:grid;grid-template-columns:minmax(0,1.63fr) minmax(0,1fr);gap:15px;margin-bottom:15px}
 .overview-details{grid-template-columns:minmax(0,.88fr) minmax(0,1.32fr)}
 .risk-sheet{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1fr) clamp(127px,14vw,192px);grid-template-rows:1fr auto;align-items:center;min-height:258px;

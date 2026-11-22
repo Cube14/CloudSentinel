@@ -2,7 +2,8 @@ import React, { useDeferredValue, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Activity, Box, Clock3, Fingerprint, ListChecks, Radar, ShieldAlert } from 'lucide-react';
-import { assetKey, DetailButton, Drawer, Empty, Panel, Pill, SearchField, severities, shortTime, sourceName, statuses, Table, time } from './workspace-ui';
+import { assetKey, connections, DetailButton, Drawer, Empty, Panel, Pill, SearchField, severities, shortTime, sourceName,
+  sourceTypes, statuses, Table, time } from './workspace-ui';
 
 const typeNames = { storage: 'Storage', identity: 'Identity', firewall: 'Security group / firewall', compute: 'Compute' };
 const matching = (query, values) => values.some(value => String(value ?? '').toLowerCase().includes(query));
@@ -52,7 +53,8 @@ function FindingRows({ data, findings, open, overview = false }) {
     empty="No findings match this view." rows={findings.map(f => ({
       key: f.id, cells: [<button className="record-title" onClick={findingAction(open, f)}>{f.title}<small>{f.ruleId}</small></button>,
         <Pill value={f.severity} />, overview ? sourceName(data, f.environment) :
-          <><strong>{f.resource}</strong><small>{sourceName(data, f.environment)}</small></>,
+          <><strong>{f.resource}</strong><small>{[sourceName(data, f.environment), sourceTypes[f.source], f.region].filter(Boolean).join(' · ')}
+            {f.stale && ' · Last known'}</small></>,
         ...(overview ? [] : [<Pill value={lifecycle(f)} />]),
         <DetailButton name={f.title} onClick={findingAction(open, f)} />]
     }))} />;
@@ -81,9 +83,10 @@ export function Overview({ data, open }) {
       <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{summary.providers.length} in scope</span>}>
         <div className="source-list">{summary.providers.map(source => <div key={source.id} className="source-row">
           <span className="source-icon"><Box size={16} strokeWidth={1.6} /></span>
-          <div><strong>{source.label}</strong><span>{source.kind === 'fixture' ? 'Simulated fixture' : 'Local emulator'}</span></div>
+          <div><strong>{source.label}</strong><span>{sourceTypes[source.kind]} · {connections[source.connection]}</span></div>
           <Pill value={source.status}>{statuses[source.status]}</Pill>
-          <time dateTime={source.lastSuccess || undefined} title={time(source.lastSuccess)}>{shortTime(source.lastSuccess)}</time>
+          <time dateTime={source.lastSnapshot || undefined} title={'Last snapshot: ' + time(source.lastSnapshot) +
+            ' · Last attempt: ' + time(source.lastAttempt)}>{shortTime(source.lastSnapshot)}</time>
         </div>)}</div>
       </Panel>
       <Panel title="Priority findings" icon={ShieldAlert} action={<Link to="/workspace/findings" className="text-link">View all findings</Link>}>
@@ -142,7 +145,8 @@ export function Assets({ data, open }) {
         const show = () => open({ type: 'asset', id });
         return { key: id, cells: [
           <button className="record-title" onClick={show}>{asset.name}<small>{asset.id}</small></button>,
-          typeNames[asset.type] || asset.type, sourceName(data, asset.environment),
+          typeNames[asset.type] || asset.type, <>{sourceName(data, asset.environment)}
+            <small>{[sourceTypes[asset.source], asset.region, asset.stale && 'Last known'].filter(Boolean).join(' · ')}</small></>,
           data.findings.filter(f => f.environment === asset.environment && f.resourceId === asset.id).length,
           <DetailButton name={asset.name} onClick={show} />
         ] };
@@ -168,7 +172,10 @@ export function RecordDetails({ record, data, close }) {
           <Pill value={lifecycle(finding)} />
         </motion.span>
       </div>
-      <Definition entries={ [['Resource', finding.resource], ['Resource ID', finding.resourceId], ['Source', sourceName(data, finding.environment)]] } />
+      {finding.stale && <p>Last known finding. The latest partial scan could not verify it.</p>}
+      <Definition entries={ [['Resource', finding.resource], ['Resource ID', finding.resourceId],
+        ['Source', sourceName(data, finding.environment)], ['Source type', sourceTypes[finding.source]],
+        ...(finding.region ? [['Region', finding.region]] : [])] } />
       <section><h3>Recorded evidence</h3><pre>{finding.evidence}</pre></section>
       <section><h3>Recommendation</h3><p>{finding.recommendation}</p></section>
       <section><h3>Lifecycle</h3><ol className="drawer-timeline">
@@ -184,7 +191,8 @@ export function RecordDetails({ record, data, close }) {
   const { id, name, type, provider, source, environment, ...configuration } = asset;
   const matches = data.findings.filter(f => f.resourceId === id && f.environment === environment);
   return <Drawer title={name} subtitle={sourceName(data, environment)} close={close}>
-    <Definition entries={ [['Resource ID', id], ['Type', typeNames[type] || type], ['Cloud provider', provider]] } />
+    <Definition entries={ [['Resource ID', id], ['Type', typeNames[type] || type], ['Cloud provider', provider],
+      ['Source type', sourceTypes[source]]] } />
     <section><h3>Collected configuration</h3><pre>{JSON.stringify(configuration, null, 2)}</pre></section>
     <section><h3>Open findings</h3>{matches.length ? <ul className="drawer-findings">
       {matches.map(f => <li key={f.id}><Pill value={f.severity} />{f.title}</li>)}</ul>

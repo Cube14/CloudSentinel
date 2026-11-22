@@ -1,0 +1,27 @@
+[
+  {
+    "id": "aws-audit",
+    "label": "AWS authorized audit account",
+    "provider": "aws",
+    "kind": "live",
+    "profile": "cloudsentinel-audit",
+    "accountId": "123456789012",
+    "regions": [
+      "us-east-1",
+      "us-west-2"
+    ],
+    "schedule": false
+  },
+  {
+    "id": "azure-audit",
+    "label": "Azure audit subscription",
+    "provider": "azure",
+    "kind": "live"
+  },
+  {
+    "id": "gcp-audit",
+    "label": "Google Cloud audit project",
+    "provider": "gcp",
+    "kind": "live"
+  }
+]
