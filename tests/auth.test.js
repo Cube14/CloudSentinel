@@ -39,7 +39,7 @@ test('sensitive APIs require authentication and signup grants viewer access only
   const { base } = await launch(t);
   const browser = client(base);
   for (const route of ['/api/dashboard', '/api/dashboard/summary', '/api/environments', '/api/assets',
-    '/api/findings', '/api/findings/resolved', '/api/scans/latest', '/api/iam', '/api/incidents', '/api/events', '/api/audit']) {
+    '/api/findings', '/api/findings/resolved', '/api/scans/latest', '/api/iam', '/api/incidents', '/api/events', '/api/audit', '/api/ollama/status']) {
     assert.equal((await browser.request(route)).status, 401, route);
   }
   assert.equal((await post(browser, '/api/scans/run')).status, 401);

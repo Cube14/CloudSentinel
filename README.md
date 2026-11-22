@@ -1,6 +1,6 @@
 # CloudSentinel
 
-CloudSentinel is a locally hosted security operations console for comparing posture across simulated AWS, Azure, and GCP environments and a live local AWS Floci emulator. Its deterministic rules generate findings from collected configurations. The React dashboard tracks scan health, inventory, findings and resolutions, severity, scan history, and fixture-event investigations.
+CloudSentinel is a locally hosted security operations console for comparing posture across simulated AWS, Azure, and GCP environments and a live local AWS Floci emulator. Its deterministic rules generate findings from collected configurations. The React workspace includes a posture overview, searchable inventory and findings, evidence drawers, and an interactive incident review with local Ollama availability.
 
 ## Start on Windows
 
@@ -38,6 +38,8 @@ Copy `.env.example` to an ignored `.env` to save settings locally. The server an
 
 The dashboard polls every two seconds. **Run scan** requests an immediate scan for the selected environment or all configured environments. Requests for an already queued or running environment share its scan. Failures are visible and the last successful inventory remains available.
 
+The landing walkthrough explains detection, correlation, and investigation using architecture diagrams. The cloud network illustration supports mouse steering and left/right keyboard rotation. Reduced-motion settings stop automatic rotation and scroll-driven camera movement.
+
 For Vite hot reload, set `CLIENT_DEV_ORIGIN=http://127.0.0.1:5173` in the backend environment, start the backend, run `npm run dev:client` in another terminal, and use the Vite URL. Vite reads the backend `PORT` from the shell or root `.env`. Authenticate against the built client for Google sign-in.
 
 ## Optional Google sign-in
@@ -67,7 +69,7 @@ npm start
 ## Demo walkthrough
 
 1. Sign in as an admin, select each fixture environment, and compare its inventory and findings.
-2. On the AWS fixture, find **Public storage access** for `customer-data`. Change its `public` value to `false` in `fixtures/aws.json` and save. Wait for the scheduled scan and dashboard poll, or click **Run Scan**. Find the same issue under **Resolved findings**. Restore the value to `true` and rescan to show it reopening.
+2. On the AWS fixture, find **Public storage access** for `customer-data`. Change its `public` value to `false` in `fixtures/aws.json` and save. Wait for the scheduled scan and dashboard poll, or click **Run scan**. Use the **Lifecycle** filter to show resolved results and open the finding to see its resolution time. Restore the value to `true` and rescan to show it reopening.
 3. Switch to AWS Floci, if enabled, to see findings from emulator API responses. View the scan timeline and last successful timestamp.
 4. Return to the AWS fixture and open **Threat Detection**. Replay the fixture event scenario and inspect the event evidence and attack stages. Launch an investigation. Ollama supplies optional hypotheses and verification steps when reachable. The app can show a deterministic fallback.
 5. Approve a simulated response and view the audit record.
@@ -93,6 +95,7 @@ Read routes accept an optional `?environment=aws-lab`, `azure-lab`, `gcp-lab`, o
 | GET | `/api/scans/latest` | Latest scan results by source |
 | POST | `/api/scans/run` | Scan the selected scope. Returns 503 with per-source details if a scan fails |
 | GET | `/api/events`, `/api/incidents`, `/api/audit` | Fixture and manually submitted event evidence, incidents, and simulated responses |
+| GET | `/api/ollama/status` | Signed-in probe for the configured local model. Reports ready, model-missing, or offline |
 | POST | `/api/events`, `/api/simulations/run` | Add a lab event or reset event history to the fixture scenario |
 | POST | `/api/incidents/:id/investigate`, `/api/incidents/:id/respond` | Optional investigation or simulated response audit entry |
 

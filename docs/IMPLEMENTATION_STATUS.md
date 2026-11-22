@@ -1,5 +1,26 @@
 # Implementation status
 
+## Cinematic landing and SOC workspace
+
+The browser UI now uses an obsidian and midnight-blue palette with silver typography and status-specific accents. The full-height landing introduces the platform through a procedural 3D network illustration and a scroll-linked architecture walkthrough. The login and signup screens share that visual language with a split desktop layout and a static atmospheric backdrop on phones. The dashboard is prepared during sign-in and shows scoped skeletons during its first fetch.
+
+- The authenticated workspace adds a persistent collapsible sidebar, an asymmetric posture and severity overview, a real scan status strip, and searchable asset and finding explorers. The detail drawers show evidence, recommendations, source labels, and the timestamps the API actually retains. Escape closes the drawer and returns focus to its trigger.
+- The incident workspace presents the recorded attack stages and individually selectable event evidence. A protected `GET /api/ollama/status` checks the configured local model. Investigations preserve recorded observations, model hypotheses, verification steps, and rule-based fallback as separate outputs.
+- The network scene has its own lazy-loaded module. Drawing pauses offscreen and in hidden tabs, runs at up to about 30 frames per second, and caps the device pixel ratio at 1.5. Reduced-motion settings suspend automatic rotation and scroll parallax. The scene is a projection rendered on Canvas 2D. The public architecture walkthrough uses conceptual diagrams and contains no inventory, findings, or metric values.
+
+Verification ran November 22, 2026 on Windows 11, Node.js 24.14.1, and Microsoft Edge 158.0.4370.33:
+
+| Check | Result |
+| --- | --- |
+| Baseline `npm test` and benchmark | 22 tests passed. 21 of 21 posture scenarios matched across 12 rules. |
+| Updated `npm test` | 23 tests passed. The added test checks installed and missing Ollama models and an unavailable endpoint. The auth regression test also checks that the model-status API rejects anonymous requests. |
+| Updated `npm run benchmark` | 21 of 21 scenarios matched across 12 rules. TP 16, TN 31, FP 0, FN 0. The scheduled API sample took 807.451 ms at a one-second scan interval. |
+| `npm run build` | Production React/Vite build succeeded. The standalone scene chunk was 2.03 kB gzip and the dashboard JavaScript chunk was 9.30 kB gzip. |
+| Edge on port 3154 | Landing, sign-in, and dashboard captured and checked at 390, 768, 1440, and 1920 CSS pixels. The smoke test also covered reduced motion, keyboard scene rotation, sidebar collapse, finder filters, drawer focus restoration, real Floci polling and scans, local Ollama investigation, and authenticated audit logging. |
+| Screenshot review | Aligned mobile and tablet metrics, improved tablet chart heading fit, kept primary landing actions together on tablet, and used a static network motif behind mobile authentication. |
+
+The browser verification used an isolated SQLite database. Live Google sign-in requires provider credentials. The existing signed OIDC protocol regression still passes. Browser coverage for this visual pass is limited to Edge. Drawer history displays the backend's first-detected, last-seen, and resolution timestamps when available.
+
 ## React console and authentication
 
 Verified November 22, 2026 on Windows 11 with Node.js 24.14.1, npm 11.11.0, and Edge 158. The work started from a clean `main` at `5979512`.

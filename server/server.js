@@ -7,7 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { detect } = require('../security-engine/engine');
 const { createScanner, fixtureSources, providers } = require('./scans');
 const { flociSource } = require('./floci');
-const { investigate } = require('./investigation');
+const { investigate, ollamaStatus } = require('./investigation');
 const { createAuth } = require('./auth');
 const { databasePath, openStore } = require('./auth/store');
 const { localEndpoint } = require('./local-endpoint');
@@ -150,6 +150,7 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       const user = auth.authenticate(req);
       if (pathname.startsWith('/api/auth/')) return await auth.handle(req, res, url, user);
       if (!user) return json(res, 401, { error: 'Sign in required.' });
+      if (req.method === 'GET' && pathname === '/api/ollama/status') return json(res, 200, await ollamaStatus(env));
       if (req.method === 'POST') {
         if (user.role !== 'admin') return json(res, 403, { error: 'Administrator access required.' });
         auth.checkCsrf(req, user);
