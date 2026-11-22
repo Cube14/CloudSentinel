@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { RevealAccent } from './reveal-accent';
 import { Activity, Bot, CircleAlert, Fingerprint, Radar, RotateCcw, ScanLine } from 'lucide-react';
@@ -29,7 +29,11 @@ function useAnalyst(api, enabled) {
   return status;
 }
 
-function Analyst({ status, report, working, disabled, run, admin }) {
+function Analyst({ status, report, working, disabled, run, admin, director, cinematic }) {
+  const reportRef = useRef(null);
+  useEffect(() => {
+    if (report && cinematic) return director.reveal(reportRef.current);
+  }, [report, director, cinematic]);
   const state = status?.state || 'checking';
   const stateLabel = { checking: 'Checking Ollama', ready: 'Model available', 'model-missing': 'Model unavailable',
     offline: 'Ollama unreachable', unknown: 'Status unavailable' }[state];
@@ -43,30 +47,38 @@ function Analyst({ status, report, working, disabled, run, admin }) {
         : <p className="panel-empty">An administrator can run an investigation.</p>}
       {working && <div className="analyst-loading" role="status"><span className="loading-line" />Reviewing recorded evidence…</div>}
       {!report && !working && admin && <p className="analyst-note">A rule-based report is available if the model cannot respond.</p>}
-      {report && <motion.div className="analyst-report" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
+      {report && <div className="analyst-report evidence-reveal" ref={reportRef}>
         <Pill value={report.mode}>{report.mode === 'ollama' ? 'Local Ollama' : 'Rule-based fallback'}</Pill>
-        <p>{report.summary}</p>
+        <p data-motion-detail>{report.summary}</p>
         {[['Recorded evidence', report.observations], ['Hypotheses to verify', report.hypotheses],
           ['Verification steps', report.recommendations]].map(([title, values]) => <section key={title}>
           <h3>{title}</h3><ul>{values.map((value, index) => <li key={index}>{value}</li>)}</ul>
         </section>)}
         {report.warning && <p className="analyst-note">{report.warning}</p>}
-      </motion.div>}
+      </div>}
     </div>
   </Panel>;
 }
 
-function Incident({ incident, source, admin, api, environment, update, analyst }) {
+function Incident({ incident, source, admin, api, environment, update, analyst, director, cinematic }) {
   const [selected, setSelected] = useState(0);
   const [report, setReport] = useState(null);
   const [proposed, setProposed] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const reduced = useReducedMotion();
+  const reduced = useReducedMotion() || !cinematic;
+  const stages = useRef(null);
+  const focus = useRef(null);
+  useEffect(() => {
+    if (cinematic) return director.reveal(stages.current, 'li');
+  }, [director, cinematic, incident.id]);
   const activeEvent = Math.min(selected, incident.events.length - 1);
   const event = incident.events[activeEvent];
   const base = '/api/incidents/' + incident.id;
+  useEffect(() => {
+    if (cinematic && event) return director.reveal(focus.current);
+  }, [director, cinematic, event?.eventId, activeEvent]);
 
   async function investigate() {
     setBusy('investigate');
@@ -97,9 +109,8 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
     <div className="incident-grid">
       <div className="incident-evidence">
         <Panel icon={Activity} title="Attack chain" action={<span className="panel-meta">{incident.ruleIds.join(' · ')}</span>}>
-          <ol className="attack-stages">{incident.attackStages.map((stage, index) =>
-            <motion.li key={stage} initial={{ opacity: .35, y: 7 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reduced ? 0 : .28, delay: reduced ? 0 : Math.min(index * .065, .45) }}><span><ScanLine size={18} strokeWidth={1.55} /></span>{stage}</motion.li>
+          <ol className="attack-stages evidence-reveal" ref={stages}>{incident.attackStages.map(stage =>
+            <li key={stage}><span><ScanLine size={18} strokeWidth={1.55} /></span>{stage}</li>
           )}</ol>
         </Panel>
         <Panel icon={Fingerprint} title="Event evidence" action={<span className="panel-meta">{incident.events.length} events</span>}>
@@ -115,13 +126,13 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
               aria-pressed={activeEvent === index} onClick={() => setSelected(index)}>
               <i aria-hidden="true" /><time dateTime={item.timestamp}>{shortTime(item.timestamp)}</time><span>{item.action}</span>
             </button></li>)}</ol>
-            <div className="event-focus reveal-host">
+            <div className="event-focus reveal-host evidence-reveal" ref={focus}>
               <AnimatePresence initial={false}>
                 {event && <motion.div key={event.eventId || activeEvent}
                   initial={{ opacity: .62, x: reduced ? 0 : 12, rotateY: reduced ? 0 : -4 }}
                   animate={{ opacity: 1, x: 0, rotateY: 0 }} transition={{ duration: reduced ? 0 : .28 }}>
-                  <RevealAccent />
-                  <h3>{event.action}</h3>
+                  {cinematic && <RevealAccent />}
+                  <h3 data-motion-detail>{event.action}</h3>
                   <dl className="event-detail">
                     {[['Timestamp', time(event.timestamp)], ['Actor', event.actor], ['Target', event.resource],
                       ['Source', event.source], ['Source IP', event.sourceIp]].filter(([, value]) => value).map(([key, value]) =>
@@ -142,12 +153,12 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
           </div>
         </Panel>}
       </div>
-      <Analyst status={analyst} report={report} working={busy === 'investigate'} disabled={!!busy} run={investigate} admin={admin} />
+      <Analyst status={analyst} report={report} working={busy === 'investigate'} disabled={!!busy} run={investigate} admin={admin} {...{ director, cinematic }} />
     </div>
   </article>;
 }
 
-export function Threats({ data, admin, api, environment, update, reportError }) {
+export function Threats({ data, admin, api, environment, update, reportError, director, cinematic }) {
   const [replaying, setReplaying] = useState(false);
   const inventoryOnly = data.summary.providers.every(source => source.kind !== 'fixture');
   const analyst = useAnalyst(api, !inventoryOnly && data.incidents.length > 0);
@@ -163,7 +174,7 @@ export function Threats({ data, admin, api, environment, update, reportError }) 
     {admin && <button className="button secondary replay" onClick={replay} disabled={replaying}>
       <RotateCcw size={16} />{replaying ? 'Replaying…' : 'Replay fixture events'}</button>}
     {data.incidents.length ? data.incidents.map(incident => <Incident key={incident.id + JSON.stringify(incident.events)}
-      source={sourceName(data, incident.environment)} {...{ incident, admin, api, environment, update, analyst }} />)
+      source={sourceName(data, incident.environment)} {...{ incident, admin, api, environment, update, analyst, director, cinematic }} />)
       : <Panel title="Incident evidence" icon={Radar}><Empty title="No incidents in this environment." /></Panel>}
   </>;
 }

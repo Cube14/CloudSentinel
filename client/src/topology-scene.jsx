@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Color, Mesh, Object3D, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial, Vector3, WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useReducedMotion } from 'motion/react';
-import { buildResource, waveVertex, waveFragment, impactFragment } from './topology-art';
+import { buildResource, waveVertex, waveFragment, impactFragment, atlasFloorFragment, auraFragment } from './topology-art';
 import { topologyTypes } from './topology-model';
 
 const cameraSettings = { position: [18, 23, 28], fov: 40, near: .1, far: 2000 };
@@ -18,7 +18,7 @@ function viewportDistance(camera, aspect, graph) {
   return Math.max(12, radius / (vertical * Math.min(1, aspect)) * .86);
 }
 
-function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview, beginCameraIntro }) {
+function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview, beginCameraIntro, director, cinematic }) {
   const { camera, gl, invalidate, size } = useThree();
   const controls = useRef(null);
   const move = useRef(null);
@@ -31,7 +31,7 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     orbit.dampingFactor = .12;
     orbit.minDistance = 3;
     orbit.maxPolarAngle = Math.PI / 2.16;
-    const stopMove = () => { move.current = null; };
+    const stopMove = () => { move.current = null; director?.stopCamera(); };
     const lost = () => onFailure();
     orbit.addEventListener('change', invalidate);
     orbit.addEventListener('start', stopMove);
@@ -42,18 +42,29 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
       orbit.removeEventListener('start', stopMove);
       gl.domElement.removeEventListener('webglcontextlost', lost);
       orbit.dispose();
+      director?.stopCamera();
       controls.current = null;
     };
-  }, [camera, gl, invalidate, reduced, onFailure]);
+  }, [camera, gl, invalidate, reduced, onFailure, director]);
 
-  function travel(target, position) {
+  function travel(target, position, duration = .68) {
     const orbit = controls.current;
     if (!orbit) return;
-    if (reduced) {
+    if (reduced || (director && !cinematic)) {
+      director?.stopCamera();
       move.current = null;
       orbit.target.copy(target);
       camera.position.copy(position);
       orbit.update();
+    } else if (director && cinematic) {
+      const start = camera.position.clone();
+      const origin = orbit.target.clone();
+      director.travel(progress => {
+        camera.position.lerpVectors(start, position, progress);
+        orbit.target.lerpVectors(origin, target, progress);
+        orbit.update();
+        invalidate();
+      }, duration);
     } else {
       move.current = { target, position };
     }
@@ -66,17 +77,16 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     controls.current.maxDistance = distance.current * 2.15;
     const target = new Vector3();
     const home = homeDirection.clone().multiplyScalar(distance.current * (compact ? .87 : 1));
-    if (visible && !reduced && beginCameraIntro?.()) {
+    if (visible && !reduced && cinematic && beginCameraIntro?.()) {
       const offset = target.clone().set(.6, -.45, 0);
       camera.position.copy(home).applyAxisAngle(verticalAxis, -.7).multiplyScalar(1.38);
       camera.position.y *= .62;
       controls.current.target.copy(offset);
-      move.current = { target, position: home, start: camera.position.clone(), offset, elapsed: 0 };
-      invalidate();
+      travel(target, home, 1.28);
       return;
     }
     travel(target, home);
-  }, [width, depth, size.width, size.height, reduced, scope, compact, preview, beginCameraIntro]);
+  }, [width, depth, size.width, size.height, reduced, scope, compact, preview, beginCameraIntro, cinematic]);
 
   useEffect(() => {
     if (selectedX === undefined || !controls.current) return;
@@ -84,7 +94,7 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     const direction = camera.position.clone().sub(controls.current.target).normalize();
     const near = Math.min(11, distance.current * .64);
     travel(target, target.clone().addScaledVector(direction, near));
-  }, [selectedX, selectedY, selectedZ, reduced]);
+  }, [selectedX, selectedY, selectedZ, reduced, cinematic]);
 
   useEffect(() => {
     if (!command || !controls.current) return;
@@ -114,15 +124,7 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
     const orbit = controls.current;
     if (!orbit) return;
     const next = move.current;
-    if (next?.start) {
-      next.elapsed += Math.min(delta, .04);
-      const fraction = Math.min(1, next.elapsed / 1.12);
-      const ease = 1 - (1 - fraction) ** 3;
-      camera.position.lerpVectors(next.start, next.position, ease);
-      orbit.target.lerpVectors(next.offset, next.target, ease);
-      if (fraction < 1) invalidate();
-      else move.current = null;
-    } else if (next) {
+    if (next) {
       const step = 1 - Math.exp(-Math.min(.05, Math.max(delta, .001)) * 10);
       camera.position.lerp(next.position, step);
       orbit.target.lerp(next.target, step);
@@ -193,7 +195,13 @@ function ResourceBatch({ nodes, type, select, hover, pulse, depth }) {
   </>;
 }
 
-function Atmosphere({ width, depth, compact }) {
+function Atmosphere({ width, depth, compact, director }) {
+  const dust = useRef(null);
+  useFrame(() => {
+    if (!director) return;
+    const { x, y, energy, aim } = director.frame;
+    dust.current.position.set(x * aim * .65, energy * .52, y * aim * .46);
+  });
   const points = useMemo(() => {
     const data = [];
     for (let i = 1; i <= (compact ? 30 : 74); i++) {
@@ -203,19 +211,19 @@ function Atmosphere({ width, depth, compact }) {
     }
     return new Float32Array(data);
   }, [width, depth, compact]);
-  return <points>
+  return <points ref={dust}>
     <bufferGeometry><bufferAttribute attach="attributes-position" args={[points, 3]} /></bufferGeometry>
     <pointsMaterial color="#91b6e2" size={.065} transparent opacity={.42} depthWrite={false} />
   </points>;
 }
 
-function ScanSweep({ width, depth, token, pulse, reduced }) {
+function ScanSweep({ width, depth, token, pulse, reduced, director }) {
   const invalidate = useThree(state => state.invalidate);
   const beam = useRef(null);
   const start = useRef(null);
   const uniforms = useMemo(() => ({ sweep: { value: -1 } }), []);
   useEffect(() => {
-    if (reduced || token == null || performance.now() - token > 1550) return;
+    if (director || reduced || token == null || performance.now() - token > 1550) return;
     start.current = token;
     invalidate();
     return () => {
@@ -224,8 +232,15 @@ function ScanSweep({ width, depth, token, pulse, reduced }) {
       if (beam.current) beam.current.visible = false;
       invalidate();
     };
-  }, [token, reduced, invalidate, pulse]);
+  }, [token, reduced, invalidate, pulse, director]);
   useFrame(() => {
+    if (director) {
+      const sweep = director.frame.sweep;
+      beam.current.visible = sweep > -.2 && !reduced;
+      pulse.current = beam.current.visible ? sweep : null;
+      uniforms.sweep.value = sweep;
+      return;
+    }
     if (start.current === null) return;
     const time = (performance.now() - start.current) / 1550;
     beam.current.visible = time < 1;
@@ -243,21 +258,25 @@ function ScanSweep({ width, depth, token, pulse, reduced }) {
   </mesh>;
 }
 
-function ScanImpact({ token }) {
+function SpatialLens({ director }) {
   const pass = useRef(null);
-  const sizedFor = useRef(null);
+  const camera = useThree(state => state.camera);
   useEffect(() => () => {
+    if (camera.view?.enabled) camera.clearViewOffset();
     if (!pass.current) return;
     const { surface, plane } = pass.current;
     surface.dispose();
     plane.geometry.dispose();
     plane.material.dispose();
     pass.current = null;
-  }, []);
+  }, [camera]);
 
-  useFrame(({ gl, scene, camera, size, invalidate }) => {
-    const elapsed = (performance.now() - token) / 310;
-    if (elapsed >= 1) {
+  useFrame(({ gl, scene, camera, size }) => {
+    const { energy, wipe, shift, x, y, aim } = director.frame;
+    if (Math.abs(shift * energy) >= .005) {
+      camera.setViewOffset(size.width, size.height, shift * energy * 22, 0, size.width, size.height);
+    } else if (camera.view?.enabled) camera.clearViewOffset();
+    if (energy < .005 && wipe < .005 && (aim < .015 || Math.abs(x) + Math.abs(y) < .01)) {
       gl.render(scene, camera);
       return;
     }
@@ -268,7 +287,8 @@ function ScanImpact({ token }) {
       const plane = new Mesh(new PlaneGeometry(2, 2), new ShaderMaterial({
         vertexShader: waveVertex,
         fragmentShader: impactFragment,
-        uniforms: { image: { value: surface.texture }, elapsed: { value: 0 }, aspect: { value: 1 } },
+        uniforms: { image: { value: surface.texture }, energy: { value: 0 }, wipe: { value: 0 }, shift: { value: 0 },
+          pointer: { value: [0, 0] }, aim: { value: 0 }, aspect: { value: 1 } },
         depthTest: false,
         depthWrite: false,
       }));
@@ -276,31 +296,63 @@ function ScanImpact({ token }) {
       pass.current = { surface, stage, canvasCamera, plane };
     }
     const { surface, stage, canvasCamera, plane } = pass.current;
-    if (sizedFor.current !== token) {
-      const scale = Math.min(1, 740 / Math.max(size.width, size.height));
-      surface.setSize(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
-      sizedFor.current = token;
-    }
-    plane.material.uniforms.elapsed.value = elapsed;
+    const scale = Math.min(1, 960 / Math.max(size.width, size.height));
+    const width = Math.max(1, Math.round(size.width * scale));
+    const height = Math.max(1, Math.round(size.height * scale));
+    if (surface.width !== width || surface.height !== height) surface.setSize(width, height);
+    plane.material.uniforms.energy.value = energy;
+    plane.material.uniforms.wipe.value = wipe;
+    plane.material.uniforms.shift.value = shift;
+    plane.material.uniforms.pointer.value[0] = x;
+    plane.material.uniforms.pointer.value[1] = -y;
+    plane.material.uniforms.aim.value = aim;
     plane.material.uniforms.aspect.value = size.width / size.height;
     gl.setRenderTarget(surface);
     gl.render(scene, camera);
     gl.setRenderTarget(null);
     gl.render(stage, canvasCamera);
-    invalidate();
   }, 1);
 
   return null;
 }
 
-function Platforms({ graph }) {
+function ResourceAuras({ nodes }) {
+  const mesh = useRef(null);
+  const invalidate = useThree(state => state.invalidate);
+  useLayoutEffect(() => {
+    const transform = new Object3D();
+    transform.rotation.x = -Math.PI / 2;
+    nodes.forEach(({ position: [x, , z] }, index) => {
+      transform.position.set(x, .008, z);
+      transform.updateMatrix();
+      mesh.current.setMatrixAt(index, transform.matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+    mesh.current.computeBoundingSphere();
+    invalidate();
+  }, [nodes, invalidate]);
+  return <instancedMesh ref={mesh} args={[undefined, undefined, nodes.length]}>
+    <planeGeometry args={[1.75, 1.75]} />
+    <shaderMaterial vertexShader={`varying vec2 coords;
+      void main(){coords=uv;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}`}
+      fragmentShader={auraFragment} transparent depthWrite={false} />
+  </instancedMesh>;
+}
+
+function Platforms({ graph, atlas }) {
+  const width = Math.max(30, graph.width + 19);
+  const depth = Math.max(25, graph.depth + 23);
+  const uniforms = useMemo(() => ({ aspect: { value: width / depth } }), [width, depth]);
   const borders = useMemo(() => new Float32Array(graph.platforms.flatMap(({ x, z, width, depth }) => {
     const y = -.017;
     return [x, y, z, x + width, y, z, x + width, y, z, x + width, y, z + depth,
       x + width, y, z + depth, x, y, z + depth, x, y, z + depth, x, y, z];
   })), [graph.platforms]);
   return <>
-    <gridHelper args={[Math.max(graph.width, graph.depth) + 12, 34, '#304866', '#17283c']} position={[0, -.27, 0]} />
+    {atlas ? <mesh position={[0, -.29, 0]} rotation={floorAngle}>
+      <planeGeometry args={[width, depth]} />
+      <shaderMaterial vertexShader={waveVertex} fragmentShader={atlasFloorFragment} uniforms={uniforms} transparent depthWrite={false} />
+    </mesh> : <gridHelper args={[Math.max(graph.width, graph.depth) + 12, 34, '#304866', '#17283c']} position={[0, -.27, 0]} />}
     {graph.platforms.map(group => <mesh key={group.id} position={[group.x + group.width / 2, -.13, group.z + group.depth / 2]}>
       <boxGeometry args={[group.width, .2, group.depth]} /><meshStandardMaterial color="#22354f" roughness={.54} metalness={.35} />
     </mesh>)}
@@ -347,19 +399,35 @@ function References({ graph, nodes }) {
   </lineSegments>;
 }
 
-function Marker({ node, current }) {
+function Marker({ node, current, director }) {
+  const ring = useRef(null);
+  useFrame(() => {
+    if (ring.current && director) ring.current.scale.setScalar(1 + director.frame.critical * .24);
+  });
   if (!node) return null;
   const [x, , z] = node.position;
-  return <mesh position={[x, .018, z]} rotation={floorAngle}>
-    <ringGeometry args={current ? [.56, .65, 24] : [.5, .54, 22]} /><meshBasicMaterial color={current ? '#d5eaff' : '#7ea7cb'} />
+  return <mesh ref={ring} position={[x, .018, z]} rotation={floorAngle}>
+    <ringGeometry args={current ? [.56, .65, 24] : [.5, .54, 22]} /><meshBasicMaterial color={current && node.severity === 'CRITICAL' ? '#ee686c' : current ? '#d5eaff' : '#7ea7cb'} />
   </mesh>;
 }
 
-function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview, beginCameraIntro }) {
-  const reduced = useReducedMotion();
+function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview, beginCameraIntro, director, cinematic, onHover }) {
+  const reduced = useReducedMotion() || cinematic === false;
   const pulse = useRef(null);
-  const [hovered, hover] = useState(null);
+  const [hovered, setHovered] = useState(null);
+  const invalidate = useThree(state => state.invalidate);
+  useEffect(() => director?.subscribe(() => { if (visible) invalidate(); }), [director, visible, invalidate]);
+  const camera = useThree(state => state.camera);
+  const pointerTarget = useMemo(() => new Vector3(), []);
   const nodes = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph]);
+  function hover(id) {
+    setHovered(id);
+    if (!onHover) return;
+    const resource = nodes.get(id);
+    if (!resource) { onHover(null, null); return; }
+    const projected = pointerTarget.set(...resource.position).project(camera);
+    onHover(id, [projected.x, -projected.y]);
+  }
   const batches = useMemo(() => Object.keys(topologyTypes).map(type =>
     [type, graph.nodes.filter(node => node.type === type)]), [graph]);
   return <>
@@ -368,14 +436,15 @@ function Field({ graph, selected, select, visible, command, labels, showLinks, o
     <directionalLight color="#eff7ff" intensity={3.4} position={[2, 7, 12]} />
     <directionalLight color="#558aeb" intensity={2} position={[-9, 6, -7]} />
     <CameraRig width={graph.width} depth={graph.depth} selected={nodes.get(selected)?.position}
-      reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} beginCameraIntro={beginCameraIntro} />
-    <Platforms graph={graph} />
-    <Atmosphere width={graph.width} depth={graph.depth} compact={compact} />
-    {preview && !reduced && scanToken != null && <ScanImpact token={scanToken} />}
-    <ScanSweep width={graph.width} depth={graph.depth} token={scanToken} pulse={pulse} reduced={reduced} />
+      reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} beginCameraIntro={beginCameraIntro} director={director} cinematic={cinematic} />
+    <Platforms graph={graph} atlas={preview} />
+    {preview && <ResourceAuras nodes={graph.nodes} />}
+    <Atmosphere width={graph.width} depth={graph.depth} compact={compact} director={cinematic ? director : null} />
+    {preview && cinematic && !reduced && <SpatialLens director={director} />}
+    <ScanSweep width={graph.width} depth={graph.depth} token={scanToken} pulse={pulse} reduced={reduced || (preview && !cinematic)} director={director} />
     {showLinks && <References graph={graph} nodes={nodes} />}
     {batches.map(([type, items]) => !!items.length && <ResourceBatch key={type} nodes={items} type={type} select={select} hover={hover} pulse={pulse} depth={graph.depth} />)}
-    <Marker node={nodes.get(selected)} current />
+    <Marker node={nodes.get(selected)} current director={director} />
     {hovered !== selected && <Marker node={nodes.get(hovered)} />}
     <Labels platforms={graph.platforms} labels={labels} />
   </>;

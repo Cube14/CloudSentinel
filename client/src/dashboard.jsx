@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { RevealAccent } from './reveal-accent';
 import { constellationState } from './constellation-state';
-import { AnimatePresence, motion } from 'motion/react';
+import { useMotionDirector } from './motion-director';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, ShieldAlert, Waypoints } from 'lucide-react';
 import { Brand } from './brand';
 import { Assets, Audit, Findings, Overview, RecordDetails } from './workspace-views';
@@ -37,6 +38,16 @@ function Sidebar({ user, collapsed, toggle, logout }) {
   </aside>;
 }
 
+function RouteReveal({ director, destination, cinematic }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (cinematic) return director.reveal(ref.current);
+  }, [director, destination, cinematic]);
+  return <div className="workspace-route-reveal" ref={ref} aria-hidden="true">
+    {cinematic && <RevealAccent />}
+  </div>;
+}
+
 function Skeleton({ disconnected }) {
   return <div className="skeleton-board" role="status" aria-label={disconnected ? 'Waiting for the API to reconnect' : 'Loading environment'}>
     <div /><div /><div /><div />
@@ -45,6 +56,15 @@ function Skeleton({ disconnected }) {
 
 export function Dashboard({ user, api, onLogout }) {
   const location = useLocation();
+  const workspace = useRef(null);
+  const reducedMotion = useReducedMotion();
+  const [effects, setEffects] = useState(() => localStorage.getItem('cloudsentinel.effects') !== 'off');
+  const cinematic = effects && !reducedMotion;
+  const director = useMotionDirector(workspace, cinematic);
+  function toggleEffects() {
+    setEffects(!effects);
+    localStorage.setItem('cloudsentinel.effects', effects ? 'off' : 'on');
+  }
   const [environment, setEnvironment] = useState('');
   const [snapshot, setSnapshot] = useState(null);
   const [environments, setEnvironments] = useState([]);
@@ -53,7 +73,7 @@ export function Dashboard({ user, api, onLogout }) {
   const [scanning, setScanning] = useState(null);
   const [settledScan, setSettledScan] = useState(null);
   const [sweep, setSweep] = useState(null);
-  const overviewIntro = useRef({ titlePlayed: false, cameraPlayed: false });
+  const overviewIntro = useRef({ titlePlayed: false, cameraPlayed: false, manualScan: null, result: null });
   const [refresh, setRefresh] = useState(0);
   const [record, setRecord] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
@@ -141,14 +161,16 @@ export function Dashboard({ user, api, onLogout }) {
         </div>)}
       </div>)}</div></div>}
   </>;
-  return <div className={'workspace' + (collapsed ? ' workspace-collapsed' : '')}>
+  return <div ref={workspace} className={'workspace' + (collapsed ? ' workspace-collapsed' : '') + (!destination ? ' workspace-spatial' : '')}
+    data-effects={cinematic ? 'on' : 'off'}>
     <Sidebar user={user} collapsed={collapsed} toggle={toggleSidebar} logout={logout} />
     <main className="workspace-main" id="main">
       <header className="workspace-top">
         <div className="workspace-breadcrumb">Workspace <span>/</span> {label}</div>
-        <span className="system-state"><span className={'status-dot' + (fetchError || failures.length ? ' warning-dot' :
+        <div className="workspace-status"><button className="effects-toggle" type="button" aria-pressed={cinematic}
+          disabled={!!reducedMotion} onClick={toggleEffects}>Effects {cinematic ? 'on' : 'off'}</button><span className="system-state"><span className={'status-dot' + (fetchError || failures.length ? ' warning-dot' :
           incomplete.length || (selectedSource && disconnected.length) ? ' coverage-dot' : '')} />
-          {state}</span>
+          {state}</span></div>
       </header>
       <div className="workspace-content">
         <div className="workspace-title">
@@ -173,16 +195,19 @@ export function Dashboard({ user, api, onLogout }) {
         {destination && destination !== 'topology' && sourceNotices}
         {(scopeError || fetchError) && <div className="feedback error" role="alert"><CircleAlert size={18} />
           {scopeError || ('Dashboard refresh failed: ' + fetchError)}</div>}
-        {data ? <AnimatePresence mode="wait" initial={false}><motion.div className="dashboard-view" key={destination}
-          initial={{ opacity: .68, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: .65 }} transition={{ duration: .15 }}>
-          <RevealAccent />
+        {(data || (!destination && snapshot?.data)) ? <AnimatePresence mode="wait" initial={false}><motion.div className="dashboard-view" key={destination}
+          initial={cinematic ? { opacity: .68, y: 4 } : false} animate={{ opacity: 1, y: 0 }}
+          exit={cinematic ? { opacity: .65 } : undefined} transition={{ duration: cinematic ? .15 : 0 }}>
+          <RouteReveal director={director} destination={destination} cinematic={cinematic} />
           <Routes location={location}>
-            <Route index element={<Overview data={data} open={setRecord} notices={sourceNotices} intro={overviewIntro} {...{ scan, scanToken, environment }} />} />
-            <Route path="topology" element={<Topology data={data} open={setRecord} {...{ active, scan, scanToken, environment }} />} />
+            <Route index element={<Overview data={data || snapshot.data} open={setRecord} notices={sourceNotices} intro={overviewIntro}
+              loading={!data} pending={requesting || !!active} sourceLabel={selectedSource?.label || 'All environments'}
+              {...{ scan, scanToken, environment, director, cinematic }} />} />
+            <Route path="topology" element={<Topology data={data} open={setRecord} {...{ active, scan, scanToken, environment, cinematic }} />} />
             <Route path="findings" element={<Findings data={data} open={setRecord} />} />
             <Route path="assets" element={<Assets data={data} open={setRecord} />} />
             <Route path="identity" element={<Findings data={data} open={setRecord} identity />} />
-            <Route path="threats" element={<Threats {...{ data, admin, api, environment, update, reportError }} />} />
+            <Route path="threats" element={<Threats {...{ data, admin, api, environment, update, reportError, director, cinematic }} />} />
             <Route path="audit" element={<Audit {...{ data, admin, api }} />} />
             <Route path="*" element={<Navigate to="/workspace" replace />} />
           </Routes>

@@ -2,7 +2,7 @@ import React, { useDeferredValue, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { RevealAccent } from './reveal-accent';
-import { TopologyPreview } from './topology';
+import { SpatialOverview } from './topology';
 import { indexTopology, topologyLinks } from './topology-model';
 import { Activity, Box, Clock3, Fingerprint, ListChecks, Radar, ShieldAlert } from 'lucide-react';
 import { assetKey, connections, DetailButton, Drawer, Empty, Panel, Pill, SearchField, severities, shortTime, sourceName,
@@ -63,13 +63,15 @@ function FindingRows({ data, findings, open, overview = false }) {
     }))} />;
 }
 
-export function Overview({ data, open, scan, scanToken, environment, notices, intro }) {
+export function Overview({ data, open, notices, loading, ...spatial }) {
   const { summary, findings, history } = data;
   return <>
-    <TopologyPreview {...{ data, open, scan, scanToken, environment, intro }} />
+    <SpatialOverview {...{ data, open, loading }} {...spatial} />
+    {!loading && <section className="overview-ledger" id="overview-ledger" aria-labelledby="ledger-title">
+    <h2 id="ledger-title">Operations ledger</h2>
     {notices}
     <div className="overview-grid">
-      <section className="risk-sheet" aria-labelledby="posture-title">
+      <section className="risk-sheet ledger-posture" aria-labelledby="posture-title">
         <div className="risk-sheet-copy">
           <p className="eyebrow"><Radar size={15} /> POSTURE ASSESSMENT</p>
           <h2 id="posture-title">Overall posture</h2>
@@ -106,6 +108,7 @@ export function Overview({ data, open, scan, scanToken, environment, notices, in
           <><Pill value={run.status}>{statuses[run.status]}</Pill>{run.error && <small className="failed-text">{run.error}</small>}</>, run.findings]
       }))} />
     </Panel>
+    </section>}
   </>;
 }
 

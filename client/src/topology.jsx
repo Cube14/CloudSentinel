@@ -2,10 +2,11 @@ import React, { Component, lazy, Suspense, useCallback, useDeferredValue, useEff
 import { RevealAccent } from './reveal-accent';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Box, Crosshair, Layers3, List, Minus, Plus, Waypoints } from 'lucide-react';
+import { Box, Crosshair, Layers3, List, Maximize2, Minimize2, Minus, Plus, Waypoints } from 'lucide-react';
 import { connections, Empty, Pill, SearchField, sourceName, sourceTypes, statuses, time } from './workspace-ui';
 import { indexTopology, layoutTopology, topologyTypes, visibleNodes } from './topology-model';
 import './topology.css';
+import './spatial-overview.css';
 
 const Scene = lazy(() => import('./topology-scene'));
 const LIMIT = 320;
@@ -105,7 +106,7 @@ function useStageVisibility(ref) {
   return visible;
 }
 
-export function Topology({ data, open, active, scan, scanToken, environment }) {
+export function Topology({ data, open, active, scan, scanToken, environment, cinematic }) {
   const [view, setView] = useState(() => matchMedia('(max-width: 620px)').matches ? 'list' : 'scene');
   const [failed, setFailed] = useState(false);
   const loseScene = useCallback(() => setFailed(true), []);
@@ -169,7 +170,7 @@ export function Topology({ data, open, active, scan, scanToken, environment }) {
               {has3D ? <SceneBoundary onFailure={loseScene}>
                 <Suspense fallback={<p className="topology-loading" role="status">Loading 3D topology…</p>}>
                   <Scene graph={graph} selected={chosen?.id} select={select} command={command} visible={visible}
-                    showLinks={links} labels={labels} onFailure={loseScene} scope={environment} scanToken={scanToken} />
+                    showLinks={links} labels={labels} onFailure={loseScene} scope={environment} scanToken={scanToken} cinematic={cinematic} />
                 </Suspense>
               </SceneBoundary> : <p className="topology-loading">Preparing 3D topology…</p>}
             </div>
@@ -227,76 +228,192 @@ function PreviewMap({ graph, assets, selected, select }) {
   </svg>;
 }
 
-export function TopologyPreview({ data, open, scan, scanToken, environment, intro }) {
+export function SpatialOverview({ data, open, scan, scanToken, environment, intro, loading, pending, sourceLabel, director, cinematic }) {
+  const stage = useRef(null);
+  const section = useRef(null);
+  const labels = useRef(null);
+  const positioner = useRef(null);
+  const pointer = useRef(null);
+  const targetPoint = useRef(null);
+  const visible = useStageVisibility(stage);
   const reduced = useReducedMotion();
-  const [revealTitle] = useState(() => !reduced && !intro.current.titlePlayed);
-  useEffect(() => { intro.current.titlePlayed = true; }, [intro]);
+  const [activated, activate] = useState(false);
+  const [flat, setFlat] = useState(() => matchMedia('(max-width: 620px), (prefers-reduced-motion: reduce)').matches);
+  const [failed, setFailed] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [selection, setSelection] = useState(null);
+  const [command, setCommand] = useState(null);
+  const [pointerActive, setPointerActive] = useState(false);
+  const [hovered, setHovered] = useState(null);
+  const hoverResource = useCallback((id, point) => { targetPoint.current = point; setHovered(id); }, []);
+  const shownScope = useRef(environment);
+  const loseScene = useCallback(() => { setFailed(true); setPointerActive(false); }, []);
   const beginCameraIntro = useCallback(() => {
     if (intro.current.cameraPlayed) return false;
     intro.current.cameraPlayed = true;
     return true;
   }, [intro]);
-  const stage = useRef(null);
-  const labels = useRef(null);
-  const visible = useStageVisibility(stage);
-  const [activated, activate] = useState(false);
-  const [flat, setFlat] = useState(() => matchMedia('(max-width: 620px), (prefers-reduced-motion: reduce)').matches);
-  const [failed, setFailed] = useState(false);
-  const [selection, setSelection] = useState(null);
-  const [command, setCommand] = useState(null);
-  const loseScene = useCallback(() => setFailed(true), []);
-  const select = useCallback(id => setSelection({ scope: environment, id }), [environment]);
-  useEffect(() => { if (visible && !flat) activate(true); }, [visible, flat]);
+
   const all = useMemo(() => indexTopology(data), [data]);
   const assets = useMemo(() => new Map(all.map(node => [node.id, node.asset])), [all]);
-  const chosen = selection?.scope === environment ? assets.get(selection.id) : null;
-  const layoutKey = JSON.stringify(layoutTopology(visibleNodes(all, chosen && selection.id, 36)));
+  const nodes = useMemo(() => new Map(all.map(node => [node.id, node])), [all]);
+  const latestNodes = useRef(nodes);
+  useEffect(() => { latestNodes.current = nodes; }, [nodes]);
+  const chosen = selection?.scope === environment && !loading ? nodes.get(selection.id) : null;
+  const select = useCallback(id => {
+    const node = latestNodes.current.get(id);
+    if (loading || !node) return;
+    setSelection({ scope: environment, id });
+    director.play(node.severity === 'CRITICAL' ? 'critical' : 'selection');
+  }, [director, environment, loading]);
+  const layoutKey = JSON.stringify(layoutTopology(visibleNodes(all, chosen?.id, 48)));
   const graph = useMemo(() => JSON.parse(layoutKey), [layoutKey]);
-  const map = <PreviewMap graph={graph} assets={assets} selected={chosen && selection.id} select={select} />;
+  const map = <PreviewMap graph={graph} assets={assets} selected={chosen?.id} select={select} />;
   const show3D = activated && !flat && !failed && !!all.length;
+  const focusNodes = graph.nodes.map(node => nodes.get(node.id));
 
-  return <section className={'constellation' + (revealTitle ? ' constellation-intro' : '')} aria-labelledby="constellation-title" data-scan={scan.tone}>
-    <div className="constellation-copy">
-      <p className="eyebrow"><Waypoints size={15} /> Cloud inventory</p>
-      <h2 id="constellation-title"><span>Cloud</span>{' '}<span>constellation</span></h2>
-      <p>{all.length ? <><strong>{all.length}</strong> discovered {all.length === 1 ? 'resource' : 'resources'}</> :
-        'Inventory appears after a source returns its first snapshot.'}</p>
-      <Link className="button secondary small" to="/workspace/topology">Explore topology <Layers3 size={15} /></Link>
+  useEffect(() => { if (visible && !flat) activate(true); }, [visible, flat]);
+  useEffect(() => {
+    if (!visible || intro.current.titlePlayed || !cinematic) return;
+    intro.current.titlePlayed = true;
+    director.play('entrance');
+    return director.reveal(section.current, '.spatial-title h2, .spatial-title p');
+  }, [visible, intro, director, cinematic]);
+  useEffect(() => {
+    if (!loading && shownScope.current !== environment) {
+      shownScope.current = environment;
+      director.play('environment');
+    }
+  }, [loading, environment, director]);
+  useEffect(() => {
+    if (scanToken == null || loading) return;
+    if (intro.current.manualScan !== scanToken && performance.now() - scanToken < 1000) {
+      intro.current.manualScan = scanToken;
+      director.play('scan');
+    }
+    if (!pending && intro.current.manualScan === scanToken && intro.current.result !== scanToken) {
+      intro.current.result = scanToken;
+      director.result();
+    }
+  }, [scanToken, pending, loading, intro, director]);
+  useEffect(() => {
+    function onFullscreen() { setFullscreen(document.fullscreenElement === section.current); }
+    document.addEventListener('fullscreenchange', onFullscreen);
+    return () => document.removeEventListener('fullscreenchange', onFullscreen);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === section.current) await document.exitFullscreen();
+      else await section.current?.requestFullscreen?.();
+    } catch { setFullscreen(false); }
+  }
+
+  useEffect(() => director.subscribe(() => {
+    if (!pointer.current) return;
+    const { x, y, aim } = director.frame;
+    pointer.current.style.transform = 'translate3d(' + (x * 50 + 50) + 'cqw,' + (y * 50 + 50) + 'cqh,0) translate(-50%,-50%) scale(' +
+      (.8 + aim * .42) + ')';
+  }), [director]);
+
+  function point(event) {
+    if (!cinematic || reduced || !show3D || !event.isPrimary || event.pointerType !== 'mouse' ||
+        !matchMedia('(hover: hover) and (pointer: fine)').matches || event.buttons !== 0) return;
+    const bounds = positioner.current.getBoundingClientRect();
+    setPointerActive(true);
+    const x = (event.clientX - bounds.left) / bounds.width * 2 - 1;
+    const y = (event.clientY - bounds.top) / bounds.height * 2 - 1;
+    const target = targetPoint.current;
+    director.point(target ? x * .45 + target[0] * .55 : x, target ? y * .45 + target[1] * .55 : y, target ? 1 : .25);
+  }
+
+  function leavePointer() {
+    targetPoint.current = null;
+    setHovered(null);
+    setPointerActive(false);
+    director.point(0, 0, 0);
+  }
+
+  return <section className="constellation spatial-atlas" ref={section} aria-labelledby="constellation-title"
+    data-scan={loading ? 'idle' : scan.tone} data-loading={loading || undefined} data-critical={chosen?.severity === 'CRITICAL' || undefined}>
+    <div className="spatial-world" ref={stage} inert={loading} aria-hidden={loading || undefined}>
+      <div className="constellation-visual spatial-visual" ref={positioner} onPointerMove={point} onPointerLeave={leavePointer}>
+        {show3D ? <SceneBoundary onFailure={loseScene}>
+          <Suspense fallback={map}>
+            <Scene graph={graph} selected={chosen?.id} preview {...{ select, visible, command, scanToken, director, cinematic }}
+              scope={loading ? shownScope.current : environment} showLinks labels={labels} onFailure={loseScene} onHover={hoverResource}
+              beginCameraIntro={beginCameraIntro} />
+          </Suspense>
+        </SceneBoundary> : all.length ? map : <div className="constellation-void" aria-hidden="true" />}
+        {show3D && <div className="topology-labels" hidden={loading} aria-hidden="true" ref={labels}>
+          {graph.platforms.slice(0, 6).map(group => <span key={group.id} hidden>{group.label}</span>)}
+        </div>}
+        {cinematic && pointerActive && <i className="spatial-cursor" ref={pointer} aria-hidden="true" data-locked={!!hovered} />}
+      </div>
     </div>
-    <div className="constellation-stage">
-      <div className="constellation-tools" aria-label="Constellation controls">
+    <div className="spatial-mask" aria-hidden="true" />
+    <div className="spatial-toolbar" aria-label="Atlas controls">
+      <div className="spatial-session"><i /><span>{sourceLabel}</span></div>
+      <div className="spatial-actions">
         {show3D && <button type="button" className="icon-button" aria-label="Reset constellation camera" onClick={() => {
           setSelection(null);
           setCommand({ action: 'reset' });
         }}><Crosshair size={17} /></button>}
-        {!!all.length && !failed && <button type="button" className="constellation-mode" onClick={() => setFlat(!flat)}>
-          {flat ? '3D view' : '2D view'}
-        </button>}
-      </div>
-      <div className="constellation-visual" ref={stage}>
-        {show3D ? <SceneBoundary onFailure={loseScene}>
-          <Suspense fallback={map}>
-            <Scene graph={graph} selected={chosen && selection.id} preview {...{ select, visible, command, scanToken }}
-              scope={environment} beginCameraIntro={beginCameraIntro} showLinks labels={labels} onFailure={loseScene} />
-          </Suspense>
-        </SceneBoundary> : all.length ? map : <div className="constellation-void" aria-hidden="true" />}
-        {show3D && <div className="topology-labels" aria-hidden="true" ref={labels}>
-          {graph.platforms.slice(0, 6).map(group => <span key={group.id} hidden>{group.label}</span>)}
-        </div>}
+        {!!all.length && !failed && <button type="button" className="constellation-mode" disabled={loading} onClick={() => {
+          leavePointer();
+          setFlat(!flat);
+        }}>{flat ? '3D view' : '2D view'}</button>}
+        {document.fullscreenEnabled && <button type="button" className="icon-button" aria-label={fullscreen ? 'Exit full screen' : 'Enter full screen'}
+          onClick={toggleFullscreen}>{fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>}
       </div>
     </div>
-    {chosen && <div className="constellation-selection reveal-host" key={chosen.id}>
-      <RevealAccent />
-      <div>
-        <strong>{chosen.name}</strong>
-        <small>{sourceName(data, chosen.environment)} · {sourceTypes[chosen.source]}</small>
-      </div>
-      <button type="button" className="text-link" onClick={() => open({ type: 'asset', id: selection.id, topology: true })}>Resource details</button>
+    <div className="spatial-title">
+      <h2 id="constellation-title">Cloud <em>Atlas</em></h2>
+      <p>{loading ? 'Loading selected environment' : all.length ? all.length + ' discovered resources' : 'Awaiting inventory'}</p>
+      <Link className="text-link spatial-topology-link" to="/workspace/topology">Explore topology <Layers3 size={15} /></Link>
+    </div>
+    {!loading && <div className="spatial-inspection">
+      {chosen ? <div className="constellation-selection spatial-selection" key={chosen.id}>
+        {cinematic && <RevealAccent />}
+        <p className="eyebrow">Selected resource</p>
+        <strong title={chosen.asset.name}>{chosen.asset.name}</strong>
+        <small>{sourceName(data, chosen.asset.environment)} · {sourceTypes[chosen.asset.source]}</small>
+        <small>{chosen.findings.length} open {chosen.findings.length === 1 ? 'finding' : 'findings'} {chosen.severity && <Pill value={chosen.severity} />}</small>
+        <button type="button" className="text-link" onClick={() => {
+          if (document.fullscreenElement === section.current) void document.exitFullscreen();
+          open({ type: 'asset', id: chosen.id, topology: true });
+        }}>Resource details</button>
+      </div> : null}
+      {focusNodes.length > 0 && <label className="spatial-focus">
+        <span className="sr-only">Focus resource</span>
+        <select value={chosen?.id || ''} onChange={event => {
+          if (event.target.value) select(event.target.value);
+          else {
+            setSelection(null);
+            setCommand({ action: 'reset' });
+          }
+        }}>
+          <option value="">Focus resource</option>
+          {focusNodes.map(node => <option key={node.id} value={node.id}>{node.asset.name}</option>)}
+        </select>
+      </label>}
     </div>}
-    <div className="constellation-footer">
-      <span className="constellation-state" role="status" key={scan.tone}><i />{scan.label}</span>
-      <span>{failed ? '3D unavailable · 2D view' : all.length > graph.nodes.length ? graph.nodes.length + ' shown' :
-        show3D ? 'Drag to orbit' : all.length ? 'Select a resource' : 'No observed resources'}</span>
+    <div className="spatial-readout">
+      <span className="constellation-state" role="status" key={loading ? 'loading' : scan.tone}>
+        <i />{loading ? 'Loading environment' : scan.label}
+      </span>
+      {!loading && <dl>
+        {[['Posture', data.summary.score], ['Open findings', data.summary.findings], ['Critical', data.summary.critical]].map(([label, value]) =>
+          <div key={label} className={label === 'Critical' && value > 0 ? 'spatial-critical' : undefined}><dt>{label}</dt><dd>{value ?? '—'}</dd></div>
+        )}
+      </dl>}
+      <div className="constellation-footer">
+        <span>{failed ? '3D unavailable · 2D view' : all.length > graph.nodes.length ? graph.nodes.length + ' shown' :
+          show3D ? 'Drag to orbit' : all.length ? 'Select a resource' : 'No observed resources'}</span>
+        <a className="text-link" href="#overview-ledger" onClick={() => {
+          if (document.fullscreenElement === section.current) void document.exitFullscreen();
+        }}>Operations ledger ↓</a>
+      </div>
     </div>
   </section>;
 }

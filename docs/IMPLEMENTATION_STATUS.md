@@ -1,12 +1,20 @@
 # Implementation status
 
+## Spatial Cloud Atlas
+
+The authenticated Overview puts the API-backed atlas first, with fullscreen, selectable inventory, a keyboard resource picker, a posture HUD, and the existing tables in an operations ledger. Scope changes stage the outgoing camera while the selected snapshot loads. GSAP coordinates camera movement, shader accents, manual scan cues, and incident reveals. Motion remains available for small UI transitions. The effects switch and OS reduced-motion preference disable cinematic cues. Mobile defaults to the selectable 2D map, and WebGL context loss falls back to that map.
+
+The models, overlays, and lighting are procedural. The scene renders on demand, caps the Overview at 48 visible resources and lens buffer at 960 pixels on its long edge, and pauses offscreen. Scan effects follow deliberate requests and confirmed dashboard results. Scheduled scans update the status without replaying the lens or wave. Evidence-heavy routes use short decorative reveals and retain the existing data and APIs.
+
+The four targeted tests and all 32 tests passed. The production build passed with an existing size warning for the lazy WebGL bundle, now 254 kB gzip. Edge captured Overview and Topology at 390, 768, 1440, and 1920 CSS pixels using an isolated fixture, including a long resource name and multiple findings. The browser verified native fullscreen, pointer lock-on and mesh selection, scan status during a delayed refresh, keyboard evidence, and forced WebGL context loss. The investigation used local Ollama. On the RTX 4060 Laptop GPU the measured scene made zero draw calls at rest, offscreen, and through a scheduled scan. Reduced motion skipped the lens framebuffer. The full captures are in `results/atlas-qa/`.
+
 ## Cloud topology
 
 Verified November 23, 2026. Authenticated Overview and Topology share a procedural 3D scene drawn from inventory and finding snapshots. Compute racks, storage stacks, identity crystals, and network shields use instanced geometry. Inventory stays grouped by provider, environment, and type. Lines represent collected same-source, same-region security group attachments or ingress references.
 
 Manual scan requests trigger a short visual sweep over existing inventory. Overview adds a one-time camera and title entrance and a 310 ms scene-only impact pass on manual scans. Scheduled scans update API status without a sweep. The manual request indicator stays visible until the post-scan dashboard refresh settles. One shared shader animates decorative accents in navigation, findings, and evidence panels. Incident evidence has previous and next controls that preserve original event order and recorded fields.
 
-The scene loads separately, draws on demand, and pauses offscreen or in hidden tabs. Overview displays up to 36 nodes. Topology displays up to 320 nodes and 640 recorded references, with the full index available in its searchable list. DPR is capped at 1.35 on desktop and 1 on mobile or dense scenes. Narrow screens default to the SVG map or list, and both views fall back to those controls after context loss. Reduced motion disables the sweep and camera easing.
+The scene loads separately, draws on demand, and pauses offscreen or in hidden tabs. The preceding Cloud Atlas section lists the current Overview node cap. Topology displays up to 320 nodes and 640 recorded references, with the full index available in its searchable list. DPR is capped at 1.35 on desktop and 1 on mobile or dense scenes. Narrow screens default to the SVG map or list, and both views fall back to those controls after context loss. Reduced motion disables the sweep and camera easing.
 
 - Targeted tests passed 4 of 4. Full `npm test` passed 32 of 32. The synthetic benchmark matched 21 of 21 scenarios across all 12 posture rules.
 - `npm run build` passed with Vite's size warning on the lazy scene chunk, approximately 252 kB gzip.
