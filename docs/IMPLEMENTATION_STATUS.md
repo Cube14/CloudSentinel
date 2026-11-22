@@ -1,6 +1,30 @@
 # Implementation status
 
-Verified November 22, 2026, on Windows 11 with Node.js 24.14.1 and npm 11.11.0. The checkout started clean on `main`, tracking `origin/main` at `https://github.com/Cube14/CloudSentinel.git`.
+## React console and authentication
+
+Verified November 22, 2026 on Windows 11 with Node.js 24.14.1, npm 11.11.0, and Edge 158. The work started from a clean `main` at `5979512`.
+
+- The separate `client/` workspace builds React and Vite assets. The server serves the built client and its authenticated API on one loopback origin. The React console maintains environment filtering, polling, finding lifecycle, real status and severity charts, inventory, incident evidence, optional Ollama analysis, and simulated responses. The original static source remains in the repository during migration.
+- SQLite persists users, SHA-256 session token digests, OAuth transactions, rate-limit buckets, and account and response audit records. Email/password uses salted scrypt. The server enforces session expiry, logout and rotation, host/origin checks, CSRF, and viewer/admin privileges. The admin setup command requires a fresh local account and prompts for its password.
+- Google OIDC uses `openid-client`, Authorization Code with PKCE S256, state, nonce, one-use flow binding, and JWS validation. Google sign-in is absent from the UI when its three settings are missing.
+- Windows and Ubuntu CI are configured to install dependencies, run tests and the benchmark, and build the client. Hosted execution remains pending.
+
+| Verification | Observed result |
+| --- | --- |
+| Baseline `npm test` at `5979512` | 16 passed, 0 failed. |
+| Baseline `npm run benchmark` | 21 of 21 scenarios matched across 12 rules. TP 16, TN 31, FP 0, FN 0. One scheduled API detection measured 993.498 ms. |
+| Final `npm test` | 22 passed, 0 failed. The original 16 cases remained and monitoring API tests now sign in. Added endpoint protection, RBAC, CSRF, login rate limiting, SQLite persistence, expiry, rotation, logout, and admin provisioning coverage. |
+| Google protocol test | The real client library validated a signed local provider fixture. Covered PKCE, state, browser binding, nonce, signature, replay, verified email, and protection against email-based account takeover. Live Google credentials are still required to exercise the provider. |
+| Final `npm run benchmark` | 21 of 21 matched, 12 rule IDs covered. TP 16, TN 31, FP 0, FN 0. Engine median 0.062 ms and p95 0.195 ms. One scheduled change reached the authenticated findings API in 779.986 ms using a one-second interval. |
+| `npm run build` | Vite 8.3.8 succeeded. The dashboard loads separately at 5.39 kB gzip. Fonts are served as local files compatible with the server’s CSP. |
+| Edge browser smoke | Passed landing, signup, password sign-in, logout, viewer controls, scoped asset and findings views, live Floci polling and manual scans, fixture attack stages, actual local Qwen investigation, and identity-attributed simulated audit. Verified the 390 px landing and dashboard with reduced motion. No JavaScript exceptions or CSP violations in the passing run. |
+| Floci and Vite proxy | Read-only Floci scan succeeded against 2.5.0 on the existing seeded emulator with 20 assets and 12 findings. The Vite proxy returned a 200 session bootstrap and a 401 from the backend for an invalid login. |
+
+Google provider setup requires an OAuth web client, the matching local redirect, and credentials in an ignored `.env`. See [the provider setup instructions](../README.md#optional-google-sign-in). The browser and CLI account smoke tests use a separate, ignored SQLite database. The working database and Google credentials remain local.
+
+## Monitoring milestone
+
+The earlier monitoring milestone was verified November 22, 2026 on Windows 11 with Node.js 24.14.1 and npm 11.11.0.
 
 ## Completed components
 
@@ -43,7 +67,7 @@ Floci and Ollama were initially unavailable. The SDK was verified independently 
 
 - Scope excludes production or real cloud accounts, Azure/GCP live connectors, and cloud event subscriptions.
 - Floci evidence covers a bounded set of operations in one region. The seeded live demo validated security groups but did not launch instances. Instance normalization was tested against an AWS-shaped wire response.
-- Failed scans retain the previous successful snapshot. State, histories and audit records reset on restart. See [security limitations](limitations.md) for coverage and trust boundaries.
+- Failed scans retain the previous successful snapshot. Scan state, finding lifecycle history and events reset on restart. SQLite now persists account and response audit records. See [security limitations](limitations.md) for coverage and trust boundaries.
 - The project uses the existing checkout. Port 3000 is occupied on this workstation, so the demo verification uses port 3153.
 
 ## Next highest-priority task
