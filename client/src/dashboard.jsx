@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, ShieldAlert } from 'lucide-react';
+import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, ShieldAlert, Waypoints } from 'lucide-react';
 import { Brand } from './brand';
 import { Assets, Audit, Findings, Overview, RecordDetails } from './workspace-views';
 import { Threats } from './workspace-threats';
+import { Topology } from './topology';
 import { scope, sourceTypes, time } from './workspace-ui';
 import './workspace.css';
 
 const navigation = [
-  ['Monitoring', [['Overview', '', Gauge], ['Findings', 'findings', ShieldAlert], ['Assets', 'assets', Box], ['Identity', 'identity', Fingerprint]]],
+  ['Monitoring', [['Overview', '', Gauge], ['Topology', 'topology', Waypoints], ['Findings', 'findings', ShieldAlert], ['Assets', 'assets', Box], ['Identity', 'identity', Fingerprint]]],
   ['Operations', [['Threats', 'threats', Radar], ['Audit trail', 'audit', ListChecks]]]
 ];
 
@@ -104,9 +105,10 @@ export function Dashboard({ user, api, onLogout }) {
   const disconnected = data?.summary.providers.filter(source => source.status === 'not-connected') || [];
   const incomplete = data?.summary.providers.filter(source => source.coverage === 'partial' || source.warnings?.length) || [];
   const selectedSource = environments.find(source => source.id === environment);
-  const active = data?.summary.providers.some(source => ['running', 'queued'].includes(source.status)) || scanning === environment;
+  const active = data?.summary.providers.some(source => ['running', 'queued'].includes(source.status));
+  const requesting = scanning === environment;
   const state = fetchError ? 'Disconnected' : selectedSource?.status === 'not-connected' ? 'Not connected' :
-    failures.length || incomplete.length ? 'Source issues' : active ? 'Scan running' :
+    active ? 'Scan running' : requesting ? 'Requesting scan' : failures.length || incomplete.length ? 'Source issues' :
       selectedSource?.connection === 'configured' ? 'Awaiting scan' : data ? 'Connected' : 'Connecting';
 
   return <div className={'workspace' + (collapsed ? ' workspace-collapsed' : '')}>
@@ -120,7 +122,8 @@ export function Dashboard({ user, api, onLogout }) {
       </header>
       <div className="workspace-content">
         <div className="workspace-title">
-          <div><p className="eyebrow"><Activity size={15} /> SECURITY OPERATIONS</p><h1>{label === 'Overview' ? 'Security overview' : label}</h1></div>
+          <div><p className="eyebrow"><Activity size={15} /> SECURITY OPERATIONS</p>
+            <h1>{label === 'Overview' ? 'Security overview' : label === 'Topology' ? 'Cloud topology' : label}</h1></div>
           <div className="workspace-controls">
             <label><span>Environment</span><span className="select-wrap"><select value={environment} onChange={event => {
               setEnvironment(event.target.value); setRecord(null); setFetchError('');
@@ -133,16 +136,16 @@ export function Dashboard({ user, api, onLogout }) {
         </div>
         <div className={'scan-strip' + (active ? ' scan-active' : '')} aria-live="polite">
           <span><Clock3 size={16} /> Last successful scan <strong>{time(data?.summary.lastScan)}</strong></span>
-          <span>{active ? 'Scan in progress' : selectedSource?.scanEnabled === false ? 'Not connected' :
+          <span>{active ? 'Scan in progress' : requesting ? 'Requesting scan…' : selectedSource?.scanEnabled === false ? 'Not connected' :
             selectedSource?.schedule === false ? 'Manual scans only' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
           {active && <span className="loading-line" />}
         </div>
-        {!!failures.length && <div className="feedback error" role="status"><CircleAlert size={19} /><div>
+        {destination !== 'topology' && !!failures.length && <div className="feedback error" role="status"><CircleAlert size={19} /><div>
           <strong>Scan failed. Available figures reflect previous scan snapshots.</strong>
           {failures.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
-        {!!disconnected.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Source not connected</strong>
+        {destination !== 'topology' && !!disconnected.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Source not connected</strong>
           {disconnected.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
-        {!!incomplete.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Coverage warnings</strong>
+        {destination !== 'topology' && !!incomplete.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Coverage warnings</strong>
           {incomplete.map(source => <div key={source.id}>{source.label} · Latest snapshot {time(source.lastSnapshot)}
             {source.coverage === 'partial' && ' · Unverified findings remain open.'}
             {source.warnings?.map(warning => <div key={JSON.stringify(warning)}>
@@ -156,6 +159,7 @@ export function Dashboard({ user, api, onLogout }) {
           initial={{ opacity: .68, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: .65 }} transition={{ duration: .15 }}>
           <Routes location={location}>
             <Route index element={<Overview data={data} open={setRecord} />} />
+            <Route path="topology" element={<Topology data={data} open={setRecord} active={active} />} />
             <Route path="findings" element={<Findings data={data} open={setRecord} />} />
             <Route path="assets" element={<Assets data={data} open={setRecord} />} />
             <Route path="identity" element={<Findings data={data} open={setRecord} identity />} />

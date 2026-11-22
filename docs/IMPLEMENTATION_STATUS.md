@@ -1,5 +1,13 @@
 # Implementation status
 
+## Cloud topology
+
+The authenticated **Topology** route uses the dashboard's asset and finding snapshots. It groups resources by provider, environment, and type. Lines represent collected security-group attachments and ingress references within the same source and region. The Overview uses a lightweight selectable SVG preview.
+
+The 3D renderer loads separately, draws on demand, and pauses offscreen or in a hidden tab. The scene caps rendering at 320 resources and 640 references, with device pixel ratio capped at 1.35 on desktop and 1 on mobile. The searchable, keyboard-accessible list includes the entire scope, opens existing evidence drawers, and provides the default on narrow screens and a fallback when WebGL is unavailable. Reduced-motion users get immediate camera changes.
+
+The three targeted topology tests and all 31 tests passed. The Vite build passed with a roughly 249 kB gzip lazy scene bundle. Edge verified real mesh selection on the NVIDIA RTX 4060 Laptop GPU, environment changes, keyboard access, evidence, failed and disconnected source states, and 390 px mobile emulation with touch selection and WebGL context-loss fallback.
+
 ## Named cloud connectors
 
 Verified November 22, 2026. The scanner supports named fixture, emulator, and live sources with separate connection and run states. Live AWS uses the SDK credential chain, verifies the configured account through STS, and reads S3, IAM, EC2 and security groups. Partial observations preserve unverified findings and do not advance the last complete scan timestamp. Named Azure and GCP sources report **NOT CONNECTED** pending adapters and credentials.

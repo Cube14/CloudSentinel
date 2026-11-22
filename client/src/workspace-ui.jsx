@@ -7,7 +7,7 @@ export const time = value => value ? new Date(value).toLocaleString(undefined, {
 export const shortTime = value => value ? new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—';
 export const scope = (path, id) => id ? path + '?environment=' + encodeURIComponent(id) : path;
 export const sourceName = (data, id) => data.environments.find(source => source.id === id)?.label || id;
-export const assetKey = asset => JSON.stringify([asset.environment, asset.type, asset.id]);
+export { assetKey } from './topology-model';
 export const statuses = { succeeded: 'Succeeded', failed: 'Failed', partial: 'Partial coverage', running: 'Running',
   queued: 'Queued', idle: 'Awaiting scan', 'not-connected': 'NOT CONNECTED' };
 export const sourceTypes = { fixture: 'FIXTURE', emulator: 'EMULATOR', live: 'LIVE' };

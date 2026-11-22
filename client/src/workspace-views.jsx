@@ -1,6 +1,8 @@
 import React, { useDeferredValue, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { TopologyPreview } from './topology';
+import { indexTopology, topologyLinks } from './topology-model';
 import { Activity, Box, Clock3, Fingerprint, ListChecks, Radar, ShieldAlert } from 'lucide-react';
 import { assetKey, connections, DetailButton, Drawer, Empty, Panel, Pill, SearchField, severities, shortTime, sourceName,
   sourceTypes, statuses, Table, time } from './workspace-ui';
@@ -79,6 +81,7 @@ export function Overview({ data, open }) {
       </section>
       <Severity findings={findings} summary={summary} />
     </div>
+    <TopologyPreview data={data} open={open} />
     <div className="overview-grid overview-details">
       <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{summary.providers.length} in scope</span>}>
         <div className="source-list">{summary.providers.map(source => <div key={source.id} className="source-row">
@@ -189,11 +192,19 @@ export function RecordDetails({ record, data, close }) {
     <Empty title="The latest snapshot no longer includes this record." />
   </Drawer>;
   const { id, name, type, provider, source, environment, ...configuration } = asset;
-  const matches = data.findings.filter(f => f.resourceId === id && f.environment === environment);
+  const topology = record.topology ? indexTopology(data) : null;
+  const matches = topology ? topology.find(node => node.id === record.id)?.findings || [] :
+    data.findings.filter(f => f.resourceId === id && f.environment === environment);
+  const references = topology ? topologyLinks(topology).filter(link => link.from === record.id || link.to === record.id) : [];
+  const resourceName = key => topology.find(node => node.id === key).asset.name;
   return <Drawer title={name} subtitle={sourceName(data, environment)} close={close}>
     <Definition entries={ [['Resource ID', id], ['Type', typeNames[type] || type], ['Cloud provider', provider],
       ['Source type', sourceTypes[source]]] } />
     <section><h3>Collected configuration</h3><pre>{JSON.stringify(configuration, null, 2)}</pre></section>
+    {!!references.length && <section><h3>Observed references</h3><ul className="drawer-findings">
+      {references.map(link => <li key={JSON.stringify(link)}>
+        {resourceName(link.from)} · {link.kind} · {resourceName(link.to)}
+      </li>)}</ul></section>}
     <section><h3>Open findings</h3>{matches.length ? <ul className="drawer-findings">
       {matches.map(f => <li key={f.id}><Pill value={f.severity} />{f.title}</li>)}</ul>
       : <p>No open findings for this asset.</p>}</section>
