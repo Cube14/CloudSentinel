@@ -1,4 +1,4 @@
-.topology,.topology-preview{--topology-line:#2c4058;--topology-blue:#a6d8f5;--topology-critical:#ee686c}
+.topology,.constellation{--topology-line:#2c4058;--topology-blue:#a6d8f5;--topology-critical:#ee686c}
 .topology-heading,.topology-filters,.topology-legend{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .topology-heading{margin-bottom:13px}.topology-heading p:last-child{color:#94a8c5;margin-top:5px;font-size:.92rem}
 .topology-source-link{display:inline-block;margin-top:6px}
@@ -62,22 +62,16 @@
 .topology-sources details{min-width:0;max-width:100%;color:#adc3df;font-size:.79rem;overflow-wrap:anywhere}
 .topology-sources details summary{color:#bbd7f4}
 .topology-sources details p{margin-top:6px;line-height:1.5}
-.topology-preview{display:grid;grid-template-columns:minmax(0,.85fr) minmax(200px,1.4fr) minmax(0,.68fr);align-items:center;
-  gap:18px;min-height:150px;margin-bottom:15px;padding:14px;border:1px solid var(--topology-line);border-radius:9px;background:#151d2b}
-.topology-preview h2{font-family:var(--display);font-size:1.48rem;letter-spacing:-.04em;margin:5px 0}
-.topology-preview-copy p:last-of-type,.topology-preview-selection small{color:#a7bdd8;font-size:.8rem;line-height:1.5}
-.topology-preview-copy .button{margin-top:8px}.topology-preview-map{display:block;max-height:140px;width:100%;overflow:visible;min-width:0}
+
+.topology-preview-map{display:block;width:100%;height:100%;max-height:320px;padding:16px;min-width:0}
 .topology-preview-map rect{fill:#1a2a41;stroke:#45617d;stroke-width:.09}
 .topology-preview-map circle{fill:#a6d8f5}.topology-preview-map .critical-node circle:not(.preview-hit){fill:var(--topology-critical)}
 .topology-preview-map .preview-hit{fill:transparent;stroke:transparent;stroke-width:.12}
 .topology-preview-map g{cursor:pointer;outline:none}.topology-preview-map g:is(:hover,:focus-visible,[aria-pressed=true]) .preview-hit{fill:#38536e;stroke:#d5eaff}
-.topology-preview-selection{display:grid;gap:5px;border-left:1px solid var(--topology-line);padding-left:12px;min-width:0}
-.topology-preview-selection span{font-weight:740;overflow-wrap:anywhere}
-.topology-preview-selection button{background:none;border:0;padding:0;justify-self:start;text-align:left}
 @media(max-width:940px){
  .topology-board{grid-template-columns:minmax(0,1fr) minmax(218px,255px)}
  .topology-stage,.topology-board{min-height:440px}.topology-review{max-height:540px}
- .topology-preview{gap:11px}
+
 }
 @media(max-width:690px){
  .sidebar nav{flex-wrap:wrap;justify-content:flex-start;gap:4px}
@@ -89,7 +83,54 @@
  .topology-board:not(.topology-list-mode) .topology-inventory{max-height:265px}
  .topology-list-mode .topology-inventory{grid-template-columns:1fr}
  .topology-board:not(.topology-list-mode) .topology-review{border-top:1px solid var(--topology-line)}
- .topology-preview{grid-template-columns:1fr 1fr;gap:11px}
- .topology-preview-map{grid-column:1/-1;grid-row:2;min-height:100px}
- .topology-preview-selection{grid-column:2;grid-row:1}
+
+
+
 }
+
+.constellation{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(235px,.54fr) minmax(0,1fr);
+  grid-template-rows:minmax(clamp(375px,27vw,470px),1fr) auto;min-width:0;margin-bottom:18px;border:1px solid #354962;
+  border-radius:13px;overflow:hidden;background:#0a1220;box-shadow:0 20px 65px -48px #749cdb}
+.constellation-stage{position:relative;grid-column:2;grid-row:1;min-width:0;background:#0a1220;display:grid;place-items:center}
+.constellation-stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,#0a1220,transparent 17%),linear-gradient(0deg,#0a1220bc,transparent 23%),linear-gradient(180deg,#0a122094,transparent 24%)}
+.constellation-void{width:100%;height:100%;background:radial-gradient(ellipse at 60% 46%,#192b45,transparent 64%)}
+.constellation-copy{grid-column:1;grid-row:1;align-content:center;z-index:1;min-width:0;padding:clamp(20px,3vw,52px)}
+.constellation-copy h2{font-family:var(--display);font-size:clamp(2.25rem,4.1vw,5rem);line-height:.93;letter-spacing:-.08em;
+  margin:12px 0 18px;font-weight:625;color:#edf2fa}
+.constellation-copy p:not(.eyebrow){font-size:.9rem;color:#a9bdd8;line-height:1.5;margin-bottom:20px}
+.constellation-copy p strong{color:#edf2fa;font-variant-numeric:tabular-nums}
+.constellation-copy .button{gap:12px}
+.constellation-tools{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:5px;z-index:2}
+.constellation-mode,.constellation-tools .icon-button{background:#101a29;border:1px solid #3a516c;border-radius:5px;color:#d6e7fb;
+  font-size:.76rem;min-width:36px;min-height:36px;padding:5px 9px}
+.constellation-mode:hover,.constellation-tools .icon-button:hover{background:#20344d}
+.constellation-selection{position:absolute;right:14px;bottom:54px;z-index:2;max-width:min(52%,290px);display:grid;gap:4px;
+  background:#101a29;border:1px solid #3b5473;padding:10px 12px;border-radius:7px;overflow-wrap:anywhere}
+.constellation-selection strong{font-size:.9rem}.constellation-selection small{color:#a7bdd8}
+.constellation-selection button{background:none;border:0;padding:0;justify-self:start;text-align:left}
+.constellation-footer{grid-column:1/-1;display:flex;justify-content:space-between;gap:7px 12px;flex-wrap:wrap;padding:11px 15px;
+  border-top:1px solid #2e415b;color:#a9bdd8;font-size:.76rem;background:#0d1725}
+.constellation-state{display:inline-flex;align-items:center;gap:7px;animation:constellation-arrive .3s ease-out;color:#c5d9f2}
+.constellation-state i{width:7px;height:7px;border-radius:50%;background:currentColor}
+[data-scan=ready] .constellation-state{color:#9ed6bb}
+[data-scan=active] .constellation-state{color:#a8d7ff}
+[data-scan=partial] .constellation-state{color:#ffd28c}
+[data-scan=failed] .constellation-state{color:#ffa7a3}
+@keyframes constellation-arrive{from{opacity:.5;transform:translateY(3px)}}
+.dashboard-view,.reveal-host{position:relative}
+.reveal-accent{position:absolute;inset:0 0 auto;width:100%;height:14px;z-index:2;pointer-events:none}
+.constellation-stage .topology-labels span{background:#101a2c;border-color:#425e82}
+@media(max-width:860px){
+  .constellation{grid-template-columns:minmax(175px,.66fr) minmax(0,1fr);grid-template-rows:minmax(300px,1fr) auto}
+}
+@media(max-width:620px){
+  .constellation{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 220px auto auto}
+  .constellation-copy{grid-row:1;padding:19px 16px 0}.constellation-copy h2{font-size:2.6rem;margin:8px 0}
+  .constellation-copy p:not(.eyebrow){margin-bottom:12px}.constellation-stage{grid-column:1;grid-row:2}
+  .constellation-stage::after{background:none}
+  .topology-preview-map{padding:12px;height:auto;max-height:100%}
+  .constellation-selection{position:relative;grid-row:3;max-width:none;right:auto;bottom:auto;margin:0 12px 10px}
+  .constellation-tools{right:10px;top:10px}.constellation-footer{grid-row:4}
+}
+@media(prefers-reduced-motion:reduce){.constellation-state{animation:none}.reveal-accent{display:none}}

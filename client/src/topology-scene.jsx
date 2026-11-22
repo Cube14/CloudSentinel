@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Color, Object3D, Vector3 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useReducedMotion } from 'motion/react';
+import { buildResource, waveVertex, waveFragment } from './topology-art';
 import { topologyTypes } from './topology-model';
 
 const cameraSettings = { position: [18, 23, 28], fov: 40, near: .1, far: 2000 };
@@ -17,7 +18,7 @@ function viewportDistance(camera, aspect, graph) {
   return Math.max(12, radius / (vertical * Math.min(1, aspect)) * .86);
 }
 
-function CameraRig({ width, depth, selected, command, reduced, visible, onFailure }) {
+function CameraRig({ width, depth, selected, command, reduced, visible, onFailure, scope, compact, preview }) {
   const { camera, gl, invalidate, size } = useThree();
   const controls = useRef(null);
   const move = useRef(null);
@@ -60,10 +61,13 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
 
   useEffect(() => {
     if (!controls.current || !size.height) return;
-    distance.current = viewportDistance(camera, size.width / size.height, { width, depth });
+    distance.current = viewportDistance(camera, size.width / size.height, { width, depth }) * (preview && !compact ? .76 : 1);
     controls.current.maxDistance = distance.current * 2.15;
-    travel(new Vector3(), homeDirection.clone().multiplyScalar(distance.current));
-  }, [width, depth, size.width, size.height, reduced]);
+    const target = new Vector3();
+    const home = homeDirection.clone().multiplyScalar(distance.current * (compact ? .87 : 1));
+    if (!reduced) camera.position.copy(home).applyAxisAngle(verticalAxis, -.44).multiplyScalar(1.24);
+    travel(target, home);
+  }, [width, depth, size.width, size.height, reduced, scope, compact, preview]);
 
   useEffect(() => {
     if (selectedX === undefined || !controls.current) return;
@@ -116,63 +120,126 @@ function CameraRig({ width, depth, selected, command, reduced, visible, onFailur
   return null;
 }
 
-function Shape({ type }) {
-  switch (type) {
-    case 'storage': return <cylinderGeometry args={[.36, .36, .53, 14]} />;
-    case 'identity': return <octahedronGeometry args={[.43, 0]} />;
-    case 'firewall': return <cylinderGeometry args={[.38, .38, .59, 6]} />;
-    default: return <boxGeometry args={[.59, .43, .59]} />;
-  }
-}
-
-function ResourceBatch({ nodes, type, select, hover }) {
-  const ref = useRef(null);
+function ResourceBatch({ nodes, type, select, hover, pulse, depth }) {
+  const body = useRef(null);
+  const trim = useRef(null);
   const invalidate = useThree(state => state.invalidate);
+  const geometry = useMemo(() => buildResource(type), [type]);
+  const colors = useMemo(() => nodes.map(node => new Color(
+    node.severity === 'CRITICAL' ? critical : topologyTypes[type].color).multiplyScalar(node.stale ? .52 : .88)), [nodes, type]);
+  const color = useMemo(() => new Color(), []);
+  const lit = useRef(false);
+
+  useEffect(() => () => geometry.forEach(part => part.dispose()), [geometry]);
   useLayoutEffect(() => {
-    const mesh = ref.current;
     const transform = new Object3D();
-    const color = new Color();
     nodes.forEach((node, index) => {
       transform.position.set(...node.position);
-      transform.scale.setScalar(node.stale ? 1.04 : 1.27);
-      transform.rotation.y = type === 'compute' ? Math.PI / 4 : 0;
+      transform.scale.setScalar(node.stale ? .98 : 1.32);
+      transform.rotation.y = type === 'compute' ? .32 : 0;
       transform.updateMatrix();
-      mesh.setMatrixAt(index, transform.matrix);
-      color.set(node.severity === 'CRITICAL' ? critical : topologyTypes[type].color);
-      if (node.stale) color.multiplyScalar(.61);
-      mesh.setColorAt(index, color);
+      body.current.setMatrixAt(index, transform.matrix);
+      trim.current.setMatrixAt(index, transform.matrix);
+      trim.current.setColorAt(index, colors[index]);
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
+    for (const mesh of [body.current, trim.current]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+    trim.current.instanceColor.needsUpdate = true;
     invalidate();
-  }, [nodes, type, invalidate]);
-  return <instancedMesh ref={ref} args={[undefined, undefined, nodes.length]}
-    onClick={event => {
-      event.stopPropagation();
-      if (event.delta < 4) select(nodes[event.instanceId]?.id);
-    }}
-    onPointerMove={event => { event.stopPropagation(); hover(nodes[event.instanceId]?.id); }}
-    onPointerOut={() => hover(null)}>
-    <Shape type={type} />
-    <meshStandardMaterial roughness={.58} metalness={.13} />
-  </instancedMesh>;
+  }, [nodes, type, colors, invalidate]);
+  useFrame(() => {
+    const scan = pulse.current;
+    if (scan === null && !lit.current) return;
+    lit.current = scan !== null;
+    nodes.forEach((node, index) => {
+      const position = -node.position[2] / (depth + 2) + .5;
+      const intensity = scan === null ? 0 : Math.max(0, 1 - Math.abs(position - scan) * 11);
+      trim.current.setColorAt(index, color.copy(colors[index]).multiplyScalar(1 + intensity * 1.6));
+    });
+    trim.current.instanceColor.needsUpdate = true;
+  });
+  return <>
+    <instancedMesh ref={body} args={[geometry[0], undefined, nodes.length]}
+      onClick={event => {
+        event.stopPropagation();
+        if (event.delta < 4) select(nodes[event.instanceId]?.id);
+      }}
+      onPointerMove={event => { event.stopPropagation(); hover(nodes[event.instanceId]?.id); }}
+      onPointerOut={() => hover(null)}>
+      <meshStandardMaterial color={type === 'identity' ? '#6886ae' : '#587294'} roughness={.32} metalness={.43} />
+    </instancedMesh>
+    <instancedMesh ref={trim} args={[geometry[1], undefined, nodes.length]}>
+      <meshBasicMaterial toneMapped={false} />
+    </instancedMesh>
+  </>;
+}
+
+function Atmosphere({ width, depth, compact }) {
+  const points = useMemo(() => {
+    const data = [];
+    for (let i = 1; i <= (compact ? 30 : 74); i++) {
+      data.push(((i * .618034) % 1 - .5) * (width + 16),
+        .8 + ((i * .414214) % 1) * 4,
+        ((i * .732051) % 1 - .5) * (depth + 12));
+    }
+    return new Float32Array(data);
+  }, [width, depth, compact]);
+  return <points>
+    <bufferGeometry><bufferAttribute attach="attributes-position" args={[points, 3]} /></bufferGeometry>
+    <pointsMaterial color="#91b6e2" size={.065} transparent opacity={.42} depthWrite={false} />
+  </points>;
+}
+
+function ScanSweep({ width, depth, token, pulse, reduced }) {
+  const invalidate = useThree(state => state.invalidate);
+  const beam = useRef(null);
+  const start = useRef(null);
+  const uniforms = useMemo(() => ({ sweep: { value: -1 } }), []);
+  useEffect(() => {
+    if (reduced || token == null || performance.now() - token > 1550) return;
+    start.current = token;
+    invalidate();
+    return () => {
+      start.current = null;
+      pulse.current = null;
+      if (beam.current) beam.current.visible = false;
+      invalidate();
+    };
+  }, [token, reduced, invalidate, pulse]);
+  useFrame(() => {
+    if (start.current === null) return;
+    const time = (performance.now() - start.current) / 1550;
+    beam.current.visible = time < 1;
+    if (time >= 1) {
+      start.current = null;
+      pulse.current = null;
+      return;
+    }
+    pulse.current = uniforms.sweep.value = -.14 + 1.28 * time;
+    invalidate();
+  }, -1);
+  return <mesh ref={beam} visible={false} position={[0, .026, 0]} rotation={floorAngle}>
+    <planeGeometry args={[width + 4, depth + 2]} />
+    <shaderMaterial vertexShader={waveVertex} fragmentShader={waveFragment} uniforms={uniforms} transparent depthWrite={false} />
+  </mesh>;
 }
 
 function Platforms({ graph }) {
   const borders = useMemo(() => new Float32Array(graph.platforms.flatMap(({ x, z, width, depth }) => {
-    const y = -.019;
+    const y = -.017;
     return [x, y, z, x + width, y, z, x + width, y, z, x + width, y, z + depth,
       x + width, y, z + depth, x, y, z + depth, x, y, z + depth, x, y, z];
   })), [graph.platforms]);
   return <>
-    <gridHelper args={[Math.max(graph.width, graph.depth) + 12, 28, '#23324a', '#142037']} position={[0, -.27, 0]} />
+    <gridHelper args={[Math.max(graph.width, graph.depth) + 12, 34, '#304866', '#17283c']} position={[0, -.27, 0]} />
     {graph.platforms.map(group => <mesh key={group.id} position={[group.x + group.width / 2, -.13, group.z + group.depth / 2]}>
-      <boxGeometry args={[group.width, .2, group.depth]} /><meshStandardMaterial color="#263750" roughness={.97} />
+      <boxGeometry args={[group.width, .2, group.depth]} /><meshStandardMaterial color="#22354f" roughness={.54} metalness={.35} />
     </mesh>)}
     <lineSegments>
       <bufferGeometry><bufferAttribute attach="attributes-position" args={[borders, 3]} /></bufferGeometry>
-      <lineBasicMaterial color="#3c5774" />
+      <lineBasicMaterial color="#537392" />
     </lineSegments>
   </>;
 }
@@ -221,31 +288,39 @@ function Marker({ node, current }) {
   </mesh>;
 }
 
-function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure }) {
+function Field({ graph, selected, select, visible, command, labels, showLinks, onFailure, scope, compact, scanToken, preview }) {
   const reduced = useReducedMotion();
+  const pulse = useRef(null);
   const [hovered, hover] = useState(null);
   const nodes = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph]);
   const batches = useMemo(() => Object.keys(topologyTypes).map(type =>
     [type, graph.nodes.filter(node => node.type === type)]), [graph]);
   return <>
-    <ambientLight color="#b9d1ee" intensity={1.45} />
-    <directionalLight color="#e9f3ff" intensity={2.1} position={[8, 15, 11]} />
+    <ambientLight color="#9ab7e2" intensity={1.75} />
+    <hemisphereLight args={['#accfff', '#19283e', 1.45]} />
+    <directionalLight color="#eff7ff" intensity={3.4} position={[2, 7, 12]} />
+    <directionalLight color="#558aeb" intensity={2} position={[-9, 6, -7]} />
     <CameraRig width={graph.width} depth={graph.depth} selected={nodes.get(selected)?.position}
-      reduced={reduced} visible={visible} command={command} onFailure={onFailure} />
+      reduced={reduced} visible={visible} command={command} onFailure={onFailure} scope={scope} compact={compact} preview={preview} />
     <Platforms graph={graph} />
+    <Atmosphere width={graph.width} depth={graph.depth} compact={compact} />
+    <ScanSweep width={graph.width} depth={graph.depth} token={scanToken} pulse={pulse} reduced={reduced} />
     {showLinks && <References graph={graph} nodes={nodes} />}
-    {batches.map(([type, items]) => !!items.length && <ResourceBatch key={type} nodes={items} type={type} select={select} hover={hover} />)}
+    {batches.map(([type, items]) => !!items.length && <ResourceBatch key={type} nodes={items} type={type} select={select} hover={hover} pulse={pulse} depth={graph.depth} />)}
     <Marker node={nodes.get(selected)} current />
     {hovered !== selected && <Marker node={nodes.get(hovered)} />}
     <Labels platforms={graph.platforms} labels={labels} />
   </>;
 }
 
+const graphIsDense = graph => graph.nodes.length > 140;
+
 export default memo(function TopologyScene(props) {
   const [compact] = useState(() => matchMedia('(max-width: 620px)').matches);
   return <Canvas className="topology-webgl" aria-hidden="true" frameloop={props.visible ? 'demand' : 'never'}
-    dpr={compact ? 1 : [1, 1.35]} camera={cameraSettings} gl={{ antialias: !compact, alpha: false, powerPreference: 'default' }}>
-    <color attach="background" args={['#0b111b']} />
-    <Field {...props} />
+    dpr={compact || graphIsDense(props.graph) ? 1 : [1, 1.35]} camera={cameraSettings} gl={{ antialias: !compact, alpha: false, powerPreference: 'default' }}>
+    <color attach="background" args={['#0a1220']} />
+    <fogExp2 attach="fog" args={['#0a1220', .009 / Math.max(1, props.graph.depth / 18)]} />
+    <Field {...props} compact={compact} />
   </Canvas>;
 });

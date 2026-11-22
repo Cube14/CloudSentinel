@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { RevealAccent } from './reveal-accent';
+import { constellationState } from './constellation-state';
 import { AnimatePresence, motion } from 'motion/react';
 import { Activity, Box, ChevronDown, CircleAlert, Clock3, Fingerprint, Gauge, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Radar, ScanLine, ShieldAlert, Waypoints } from 'lucide-react';
 import { Brand } from './brand';
@@ -49,6 +51,7 @@ export function Dashboard({ user, api, onLogout }) {
   const [fetchError, setFetchError] = useState('');
   const [actionError, setActionError] = useState(null);
   const [scanning, setScanning] = useState(null);
+  const [sweep, setSweep] = useState(null);
   const [refresh, setRefresh] = useState(0);
   const [record, setRecord] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
@@ -87,6 +90,7 @@ export function Dashboard({ user, api, onLogout }) {
   function reportError(message) { setActionError({ environment, message }); }
   async function run() {
     setScanning(environment);
+    setSweep({ scope: environment, at: performance.now() });
     setActionError(null);
     try { await api(scope('/api/scans/run', environment), {}); }
     catch (error) { reportError(error.message); }
@@ -111,6 +115,33 @@ export function Dashboard({ user, api, onLogout }) {
     active ? 'Scan running' : requesting ? 'Requesting scan' : failures.length || incomplete.length ? 'Source issues' :
       selectedSource?.connection === 'configured' ? 'Awaiting scan' : data ? 'Connected' : 'Connecting';
 
+  useEffect(() => {
+    if (!active || requesting) return;
+    const at = performance.now();
+    setSweep(previous => previous?.scope === environment && at - previous.at < 1550 ?
+      previous : { scope: environment, at });
+  }, [active, environment]);
+
+  const scan = constellationState({
+    requesting, active, failed: !!(scopeError || failures.length), partial: !!incomplete.length,
+    disconnected: !!(fetchError || disconnected.length), lastScan: data?.summary.lastScan,
+  });
+  const scanToken = sweep?.scope === environment ? sweep.at : null;
+  const sourceNotices = <>
+    {!!failures.length && <div className="feedback error" role="status"><CircleAlert size={19} /><div>
+      <strong>Scan failed. Available figures reflect previous scan snapshots.</strong>
+      {failures.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
+    {!!disconnected.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Source not connected</strong>
+      {disconnected.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
+    {!!incomplete.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Coverage warnings</strong>
+      {incomplete.map(source => <div key={source.id}>{source.label} · Latest snapshot {time(source.lastSnapshot)}
+        {source.coverage === 'partial' && ' · Unverified findings remain open.'}
+        {source.warnings?.map(warning => <div key={JSON.stringify(warning)}>
+          {[warning.service, warning.region, warning.operation, warning.code].filter(Boolean).join(' · ')}
+          {warning.count > 1 && ' × ' + warning.count}
+        </div>)}
+      </div>)}</div></div>}
+  </>;
   return <div className={'workspace' + (collapsed ? ' workspace-collapsed' : '')}>
     <Sidebar user={user} collapsed={collapsed} toggle={toggleSidebar} logout={logout} />
     <main className="workspace-main" id="main">
@@ -140,26 +171,15 @@ export function Dashboard({ user, api, onLogout }) {
             selectedSource?.schedule === false ? 'Manual scans only' : data ? 'Scheduled every ' + data.intervalMs / 1000 + ' s' : 'Awaiting snapshot'}</span>
           {active && <span className="loading-line" />}
         </div>
-        {destination !== 'topology' && !!failures.length && <div className="feedback error" role="status"><CircleAlert size={19} /><div>
-          <strong>Scan failed. Available figures reflect previous scan snapshots.</strong>
-          {failures.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
-        {destination !== 'topology' && !!disconnected.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Source not connected</strong>
-          {disconnected.map(source => <div key={source.id}>{source.label} · {source.error}</div>)}</div></div>}
-        {destination !== 'topology' && !!incomplete.length && <div className="feedback warning" role="status"><CircleAlert size={19} /><div><strong>Coverage warnings</strong>
-          {incomplete.map(source => <div key={source.id}>{source.label} · Latest snapshot {time(source.lastSnapshot)}
-            {source.coverage === 'partial' && ' · Unverified findings remain open.'}
-            {source.warnings?.map(warning => <div key={JSON.stringify(warning)}>
-              {[warning.service, warning.region, warning.operation, warning.code].filter(Boolean).join(' · ')}
-              {warning.count > 1 && ' × ' + warning.count}
-            </div>)}
-          </div>)}</div></div>}
+        {destination && destination !== 'topology' && sourceNotices}
         {(scopeError || fetchError) && <div className="feedback error" role="alert"><CircleAlert size={18} />
           {scopeError || ('Dashboard refresh failed: ' + fetchError)}</div>}
         {data ? <AnimatePresence mode="wait" initial={false}><motion.div className="dashboard-view" key={destination}
           initial={{ opacity: .68, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: .65 }} transition={{ duration: .15 }}>
+          <RevealAccent />
           <Routes location={location}>
-            <Route index element={<Overview data={data} open={setRecord} />} />
-            <Route path="topology" element={<Topology data={data} open={setRecord} active={active} />} />
+            <Route index element={<Overview data={data} open={setRecord} notices={sourceNotices} {...{ scan, scanToken, environment }} />} />
+            <Route path="topology" element={<Topology data={data} open={setRecord} {...{ active, scan, scanToken, environment }} />} />
             <Route path="findings" element={<Findings data={data} open={setRecord} />} />
             <Route path="assets" element={<Assets data={data} open={setRecord} />} />
             <Route path="identity" element={<Findings data={data} open={setRecord} identity />} />

@@ -1,3 +1,4 @@
+import { RevealAccent } from './reveal-accent';
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ArrowUpRight, Inbox, Search, X } from 'lucide-react';
@@ -65,7 +66,7 @@ export function Drawer({ title, subtitle, children, close }) {
     onCancel={event => { event.preventDefault(); close(); }}
     onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <motion.div className="drawer-body" initial={{ x: 24, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: .23 }}>
-      <header><div><p>{subtitle}</p><h2 id="drawer-title">{title}</h2></div>
+      <header className="reveal-host"><RevealAccent key={title} /><div><p>{subtitle}</p><h2 id="drawer-title">{title}</h2></div>
         <button className="icon-button" ref={closeButton} onClick={close} aria-label="Close details"><X size={20} /></button></header>
       {children}
     </motion.div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { RevealAccent } from './reveal-accent';
 import { Activity, Bot, CircleAlert, Fingerprint, Radar, RotateCcw, ScanLine } from 'lucide-react';
 import { Empty, Panel, Pill, scope, sourceName, shortTime, time } from './workspace-ui';
 
@@ -62,7 +63,9 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const event = incident.events[selected];
+  const reduced = useReducedMotion();
+  const activeEvent = Math.min(selected, incident.events.length - 1);
+  const event = incident.events[activeEvent];
   const base = '/api/incidents/' + incident.id;
 
   async function investigate() {
@@ -96,20 +99,37 @@ function Incident({ incident, source, admin, api, environment, update, analyst }
         <Panel icon={Activity} title="Attack chain" action={<span className="panel-meta">{incident.ruleIds.join(' · ')}</span>}>
           <ol className="attack-stages">{incident.attackStages.map((stage, index) =>
             <motion.li key={stage} initial={{ opacity: .35, y: 7 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: .28, delay: index * .055 }}><span><ScanLine size={18} strokeWidth={1.55} /></span>{stage}</motion.li>
+              transition={{ duration: reduced ? 0 : .28, delay: reduced ? 0 : Math.min(index * .065, .45) }}><span><ScanLine size={18} strokeWidth={1.55} /></span>{stage}</motion.li>
           )}</ol>
         </Panel>
         <Panel icon={Fingerprint} title="Event evidence" action={<span className="panel-meta">{incident.events.length} events</span>}>
+          {event && <div className="event-transport" role="group" aria-label="Navigate evidence">
+            <button className="button secondary small" type="button" disabled={activeEvent <= 0}
+              onClick={() => setSelected(activeEvent - 1)}>Previous event</button>
+            <span aria-live="polite">Event {activeEvent + 1} of {incident.events.length}</span>
+            <button className="button secondary small" type="button" disabled={activeEvent >= incident.events.length - 1}
+              onClick={() => setSelected(activeEvent + 1)}>Next event</button>
+          </div>}
           <div className="event-review">
             <ol className="event-list">{incident.events.map((item, index) => <li key={item.eventId || index}><button type="button"
-              aria-pressed={selected === index} onClick={() => setSelected(index)}>
-              <time dateTime={item.timestamp}>{shortTime(item.timestamp)}</time><span>{item.action}</span>
+              aria-pressed={activeEvent === index} onClick={() => setSelected(index)}>
+              <i aria-hidden="true" /><time dateTime={item.timestamp}>{shortTime(item.timestamp)}</time><span>{item.action}</span>
             </button></li>)}</ol>
-            {event && <motion.dl className="event-detail" key={selected} initial={{ opacity: .6 }} animate={{ opacity: 1 }}>
-              {[['Timestamp', time(event.timestamp)], ['Actor', event.actor], ['Target', event.resource],
-                ['Source', event.source], ['Source IP', event.sourceIp]].filter(([, value]) => value).map(([key, value]) =>
-                <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}
-            </motion.dl>}
+            <div className="event-focus reveal-host">
+              <AnimatePresence initial={false}>
+                {event && <motion.div key={event.eventId || activeEvent}
+                  initial={{ opacity: .62, x: reduced ? 0 : 12, rotateY: reduced ? 0 : -4 }}
+                  animate={{ opacity: 1, x: 0, rotateY: 0 }} transition={{ duration: reduced ? 0 : .28 }}>
+                  <RevealAccent />
+                  <h3>{event.action}</h3>
+                  <dl className="event-detail">
+                    {[['Timestamp', time(event.timestamp)], ['Actor', event.actor], ['Target', event.resource],
+                      ['Source', event.source], ['Source IP', event.sourceIp]].filter(([, value]) => value).map(([key, value]) =>
+                      <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}
+                  </dl>
+                </motion.div>}
+              </AnimatePresence>
+            </div>
           </div>
         </Panel>
         {admin && <Panel icon={ScanLine} title="Simulated response">

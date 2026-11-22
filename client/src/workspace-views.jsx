@@ -1,6 +1,7 @@
 import React, { useDeferredValue, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { RevealAccent } from './reveal-accent';
 import { TopologyPreview } from './topology';
 import { indexTopology, topologyLinks } from './topology-model';
 import { Activity, Box, Clock3, Fingerprint, ListChecks, Radar, ShieldAlert } from 'lucide-react';
@@ -62,9 +63,11 @@ function FindingRows({ data, findings, open, overview = false }) {
     }))} />;
 }
 
-export function Overview({ data, open }) {
+export function Overview({ data, open, scan, scanToken, environment, notices }) {
   const { summary, findings, history } = data;
   return <>
+    <TopologyPreview {...{ data, open, scan, scanToken, environment }} />
+    {notices}
     <div className="overview-grid">
       <section className="risk-sheet" aria-labelledby="posture-title">
         <div className="risk-sheet-copy">
@@ -81,8 +84,8 @@ export function Overview({ data, open }) {
       </section>
       <Severity findings={findings} summary={summary} />
     </div>
-    <TopologyPreview data={data} open={open} />
-    <div className="overview-grid overview-details">
+    <motion.div className="overview-grid overview-details" initial={{ opacity: .78, y: 8 }} whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: .15 }} transition={{ duration: .26 }}>
       <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{summary.providers.length} in scope</span>}>
         <div className="source-list">{summary.providers.map(source => <div key={source.id} className="source-row">
           <span className="source-icon"><Box size={16} strokeWidth={1.6} /></span>
@@ -96,7 +99,7 @@ export function Overview({ data, open }) {
         <FindingRows data={data} open={open} overview findings={sortedFindings(findings)
           .filter(f => ['CRITICAL', 'HIGH'].includes(f.severity)).slice(0, 4)} />
       </Panel>
-    </div>
+    </motion.div>
     <Panel title="Scan timeline" icon={Clock3} action={<span className="panel-meta">Most recent runs</span>}>
       <Table headers={['Finished', 'Environment', 'Result', 'Findings']} rows={history.slice(0, 12).map((run, index) => ({
         key: run.environment + run.finishedAt + index, cells: [time(run.finishedAt), sourceName(data, run.environment),
@@ -118,7 +121,8 @@ export function Findings({ data, open, identity = false }) {
     matching(query, [f.title, f.resource, f.ruleId, f.evidence, sourceName(data, f.environment)])));
   return <Panel title={identity ? 'Identity and access findings' : 'Findings explorer'} icon={identity ? Fingerprint : ShieldAlert}
     action={<span className="panel-meta" aria-live="polite">{filtered.length} results</span>}>
-    <div className="explorer-toolbar">
+    <div className="explorer-toolbar reveal-host">
+      <RevealAccent key={status + severity + filtered.map(finding => finding.id).join('|')} />
       <SearchField label="Search findings" value={search} onChange={setSearch} />
       <label>Severity<select value={severity} onChange={event => setSeverity(event.target.value)}>
         <option value="">All severities</option>{severities.map(level => <option key={level}>{level}</option>)}

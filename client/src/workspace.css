@@ -173,3 +173,23 @@ tbody tr:last-child td{border:0}tbody tr:hover{background:#1a283c}.failed-text{c
   .skeleton-board{grid-template-columns:1fr}.skeleton-board div{min-height:155px}
 }
 @media(prefers-reduced-motion:reduce){.loading-line::after{width:100%}}
+
+.workspace .event-transport{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;
+  margin-bottom:12px;padding-bottom:11px;border-bottom:1px solid #34475f;color:#a8bdd8;font-size:.76rem}
+.workspace .event-transport .button:disabled{opacity:.46}
+.workspace .event-list{position:relative;padding-inline-start:5px}
+.workspace .event-list::before{content:"";position:absolute;top:13px;bottom:13px;left:17px;width:1px;background:#38506d}
+.workspace .event-list button{position:relative;min-height:36px;padding:6px 8px;overflow-wrap:anywhere}
+.workspace .event-list button i{flex:none;width:7px;height:7px;border-radius:50%;margin-inline-start:1px;
+  background:#6484aa;box-shadow:0 0 0 3px #182435}
+.workspace .event-list button[aria-pressed=true] i{background:#c4e1fe;box-shadow:0 0 0 3px #334f72}
+.workspace .event-focus{min-width:0;border-left:1px solid #34475f;padding:4px 0 4px 14px;perspective:680px;overflow:hidden}
+.workspace .event-focus h3{margin:1px 0 10px;font-family:var(--display);font-weight:650;line-height:1.2;overflow-wrap:anywhere}
+.workspace .event-focus .event-detail{min-width:0}
+.workspace :is(.sidebar nav a,.topology-inventory button){transition:background-color .16s,border-color .16s,color .16s}
+@media(max-width:640px){
+  .workspace .event-focus{border-left:0;border-top:1px solid #34475f;padding:13px 0 0}
+}
+@media(prefers-reduced-motion:reduce){
+  .workspace :is(.sidebar nav a,.topology-inventory button){transition:none}
+}

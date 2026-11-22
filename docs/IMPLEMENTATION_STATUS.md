@@ -2,11 +2,15 @@
 
 ## Cloud topology
 
-The authenticated **Topology** route uses the dashboard's asset and finding snapshots. It groups resources by provider, environment, and type. Lines represent collected security-group attachments and ingress references within the same source and region. The Overview uses a lightweight selectable SVG preview.
+Verified November 23, 2026. Authenticated Overview and Topology share a procedural 3D scene drawn from inventory and finding snapshots. Compute racks, storage stacks, identity crystals, and network shields use instanced geometry. Inventory stays grouped by provider, environment, and type. Lines represent collected same-source, same-region security group attachments or ingress references.
 
-The 3D renderer loads separately, draws on demand, and pauses offscreen or in a hidden tab. The scene caps rendering at 320 resources and 640 references, with device pixel ratio capped at 1.35 on desktop and 1 on mobile. The searchable, keyboard-accessible list includes the entire scope, opens existing evidence drawers, and provides the default on narrow screens and a fallback when WebGL is unavailable. Reduced-motion users get immediate camera changes.
+Manual requests and observed active scans trigger a short visual sweep over existing inventory. Scan status and outcomes use API data. One shared shader animates decorative accents in navigation, findings, and evidence panels. Incident evidence has previous and next controls that preserve original event order and recorded fields.
 
-The three targeted topology tests and all 31 tests passed. The Vite build passed with a roughly 249 kB gzip lazy scene bundle. Edge verified real mesh selection on the NVIDIA RTX 4060 Laptop GPU, environment changes, keyboard access, evidence, failed and disconnected source states, and 390 px mobile emulation with touch selection and WebGL context-loss fallback.
+The scene loads separately, draws on demand, and pauses offscreen or in hidden tabs. Overview displays up to 36 nodes. Topology displays up to 320 nodes and 640 recorded references, with the full index available in its searchable list. DPR is capped at 1.35 on desktop and 1 on mobile or dense scenes. Narrow screens default to the SVG map or list, and both views fall back to those controls after context loss. Reduced motion disables the sweep and camera easing.
+
+- Targeted tests passed 4 of 4. Full `npm test` passed 32 of 32. The synthetic benchmark matched 21 of 21 scenarios across all 12 posture rules.
+- `npm run build` passed with Vite's size warning on the lazy scene chunk, approximately 252 kB gzip.
+- Authenticated Edge 158 on the RTX 4060 Laptop GPU exercised mesh picking, real Floci inventory, scan requests, incident navigation, keyboard evidence, and forced WebGL context loss in both views. No JavaScript, console, or CSP errors in the passing smoke. Reviewed 390, 1440, and 1920 CSS-pixel screenshots and improved mobile risk markers and Overview warning placement. Mobile sizes were emulated. The browser smoke used fixture and local emulator data.
 
 ## Named cloud connectors
 
