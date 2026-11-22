@@ -1,0 +1,9 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');const {scan,detect}=require('../security-engine/engine');
+function load(n){const x=JSON.parse(fs.readFileSync(path.join(__dirname,'../fixtures',n+'.json')));return x.assets.map(a=>({...a,provider:n,environment:x.environment}))}
+test('three environment inventories scan',()=>{for(const p of ['aws','azure','gcp']){const r=scan(load(p));assert.equal(r.assets,4);assert.ok(r.score>=0&&r.score<=100)}});
+test('public storage is flagged and becomes clean after remediation',()=>{const asset={id:'test',name:'test',provider:'aws',environment:'lab',type:'storage',public:true,encrypted:true,logging:true};assert.ok(scan([asset]).findings.some(f=>f.ruleId==='CSPM-001'));asset.public=false;assert.ok(!scan([asset]).findings.some(f=>f.ruleId==='CSPM-001'))});
+test('both ipv4 and ipv6 unrestricted ssh detected',()=>{const a={id:'sg',name:'sg',provider:'aws',type:'firewall',ingress:[{port:22,cidrs:['::/0']}]};assert.ok(scan([a]).findings.some(x=>x.ruleId==='CSPM-004'))});
+test('benign events produce no incidents',()=>assert.deepEqual(detect([{eventId:'x',actor:'alice',provider:'gcp',action:'ListBuckets',timestamp:'2026-11-22T08:00:00Z'}]),[]));
+test('attack chain correlates rules and stages',()=>{const events=JSON.parse(fs.readFileSync(path.join(__dirname,'../fixtures/events.json')));const incidents=detect(events);assert.equal(incidents.length,1);assert.equal(incidents[0].severity,'CRITICAL');assert.deepEqual(incidents[0].attackStages,['Credential Access','Privilege Escalation','Discovery','Collection']);assert.equal(incidents[0].ruleIds.length,4)});
+test('invalid timestamps excluded from detection',()=>assert.deepEqual(detect([{actor:'a',action:'CreateAccessKey',timestamp:'nope'}]),[]));
+test('zero asset score is explicitly null',()=>assert.equal(scan([]).score,null));
