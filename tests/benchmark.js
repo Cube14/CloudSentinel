@@ -2,11 +2,11 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { once } = require('node:events');
 const { performance } = require('node:perf_hooks');
 const { setTimeout: delay } = require('node:timers/promises');
 const { scan } = require('../security-engine/engine');
 const { createApp } = require('../server/server');
+const { client, listen, password } = require('./session');
 
 const rules = {
   storage: { public: ['CSPM-001'], encrypted: ['CSPM-002'], encryptionAlgorithms: ['CSPM-002'],
@@ -50,14 +50,19 @@ async function scheduledLatency() {
   const asset = { id: 'benchmark-bucket', name: 'benchmark-bucket', type: 'storage', public: false };
   const { app } = createApp({
     env: { SCAN_INTERVAL_MS: String(intervalMs) },
+    dbPath: ':memory:',
     sources: [{ id: 'aws-lab', provider: 'aws', kind: 'fixture', label: 'Controlled benchmark input',
       collect: () => [{ ...asset }] }]
   });
-  app.listen(0, '127.0.0.1');
-  await once(app, 'listening');
+  const browser = client(await listen(app));
   try {
+    await browser.request('/api/auth/session');
+    const signup = await browser.request('/api/auth/signup', {
+      method: 'POST', body: { email: 'benchmark@example.test', password }
+    });
+    if (signup.status !== 201) throw new Error('Benchmark viewer signup failed: ' + signup.status);
     async function findings() {
-      const response = await fetch('http://127.0.0.1:' + app.address().port + '/api/findings');
+      const response = await browser.request('/api/findings');
       if (!response.ok) throw new Error('Benchmark API failed: ' + response.status);
       return response.json();
     }

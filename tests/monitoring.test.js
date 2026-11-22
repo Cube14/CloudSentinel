@@ -2,21 +2,27 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { once } = require('node:events');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { setTimeout: delay } = require('node:timers/promises');
 const { createApp } = require('../server/server');
+const { client, listen, login, seedAdmin } = require('./session');
 
 async function start(t, options) {
-  const { app } = createApp(options);
-  app.listen(0, '127.0.0.1');
-  await once(app, 'listening');
-  t.after(() => new Promise(resolve => app.close(resolve)));
-  const base = 'http://127.0.0.1:' + app.address().port;
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cloudsentinel-monitoring-'));
+  const dbPath = path.join(directory, 'auth.sqlite');
+  await seedAdmin(dbPath);
+  const { app } = createApp({ ...options, dbPath });
+  const browser = client(await listen(app));
+  t.after(async () => {
+    await new Promise(resolve => app.close(resolve));
+    await fs.rm(dbPath);
+    await fs.rmdir(directory);
+  });
+  await login(browser);
   return async (route, method = 'GET', body, headers) => {
-    const response = await fetch(base + route, { method, body, headers });
+    const response = await browser.request(route, { method, body, headers });
     return [response.status, await response.json()];
   };
 }

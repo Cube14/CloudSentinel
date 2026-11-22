@@ -8,25 +8,27 @@ const { detect } = require('../security-engine/engine');
 const { createScanner, fixtureSources, providers } = require('./scans');
 const { flociSource } = require('./floci');
 const { investigate } = require('./investigation');
+const { createAuth } = require('./auth');
+const { databasePath, openStore } = require('./auth/store');
+const { localEndpoint } = require('./local-endpoint');
 
 const root = path.resolve(__dirname, '..');
-const publicDir = path.join(root, 'public');
+const clientDir = path.join(root, 'client', 'dist');
 const safe = value => typeof value === 'string' && value.trim().length > 0 && value.length < 128;
-const assetTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' };
-const staticPaths = new Map([['/', 'index.html'], ['/index.html', 'index.html'],
-  ['/app.js', 'app.js'], ['/style.css', 'style.css']]);
+const assetTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+  '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.txt': 'text/plain' };
 
 function json(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
 }
 
-async function parse(req) {
+async function parse(req, limit = 1000000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
-    if (size > 1000000) {
+    if (size > limit) {
       req.resume();
       throw Object.assign(new Error('Request body too large'), { status: 413 });
     }
@@ -37,7 +39,29 @@ async function parse(req) {
   return body;
 }
 
-function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures'), sources } = {}) {
+async function serveClient(res, pathname) {
+  const asset = pathname === '/mark.svg' || /^\/assets\/[a-zA-Z0-9_.-]+$/.test(pathname);
+  const page = pathname === '/' || pathname === '/login' || pathname === '/signup' ||
+    pathname === '/workspace' || pathname.startsWith('/workspace/');
+  if (!asset && !page) return json(res, 404, { error: 'Not found' });
+  const filename = asset ? path.join(clientDir, pathname.slice(1)) : path.join(clientDir, 'index.html');
+  const type = assetTypes[path.extname(filename)];
+  if (!type) return json(res, 404, { error: 'Not found' });
+  try {
+    const body = await fs.readFile(filename);
+    res.writeHead(200, { 'Content-Type': type.startsWith('font/') ? type : type + '; charset=utf-8',
+      'Cache-Control': asset && !pathname.endsWith('.txt') && pathname !== '/mark.svg'
+        ? 'public, max-age=31536000, immutable' : 'no-cache' });
+    return res.end(body);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return asset ? json(res, 404, { error: 'Not found' })
+      : json(res, 503, { error: 'Build the local React client with npm run build.' });
+  }
+}
+
+function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures'), sources,
+  dbPath = databasePath(env), oidcFetch } = {}) {
   const intervalMs = Number(env.SCAN_INTERVAL_MS ?? 15000);
   if (!Number.isInteger(intervalMs) || intervalMs < 1000 || intervalMs > 2147483647) {
     throw new Error('SCAN_INTERVAL_MS must be an integer from 1000 to 2147483647');
@@ -45,10 +69,19 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
   const configuredSources = sources ?? fixtureSources(fixtureDir);
   if (!sources && env.FLOCI_ENDPOINT) configuredSources.push(flociSource(env.FLOCI_ENDPOINT));
   const scanner = createScanner(configuredSources);
+  const devOrigin = env.CLIENT_DEV_ORIGIN ? localEndpoint(env.CLIENT_DEV_ORIGIN) : null;
+  const store = openStore(dbPath);
+  let auth;
+  try {
+    auth = createAuth({ store, env, json, parse, oidcFetch });
+  } catch (error) {
+    store.close();
+    throw error;
+  }
   let events = [], incidents = [];
-  const audit = [];
   let initial = Promise.resolve();
   let timer;
+  let pruning;
 
   async function loadEvents() {
     const raw = await fs.readFile(path.join(fixtureDir, 'events.json'), 'utf8');
@@ -85,34 +118,44 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       history: selected.flatMap(entry => entry.history.map(run => ({ ...run, environment: entry.source.id })))
         .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt)),
       incidents: currentIncidents, events: scoped(events),
-      audit: id === null ? audit : audit.filter(entry => entry.sourceEnvironment === id)
+      audit: store.audit(id)
     };
   }
 
   const app = http.createServer(async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     try {
       const port = app.address().port;
       const hosts = ['localhost:' + port, '127.0.0.1:' + port];
       if (port === 80) hosts.push('localhost', '127.0.0.1');
-      if (!hosts.includes(req.headers.host) ||
-          (req.method === 'POST' && req.headers.origin && req.headers.origin !== 'http://' + req.headers.host)) {
+      if (!hosts.includes(req.headers.host)) return json(res, 403, { error: 'Expected a local request' });
+      const origin = new URL('http://' + req.headers.host).origin;
+      if (req.method !== 'GET' && req.headers.origin &&
+          req.headers.origin !== origin && req.headers.origin !== devOrigin) {
         return json(res, 403, { error: 'Expected a local request from this origin' });
       }
-      const url = new URL(req.url, 'http://localhost');
+      const url = new URL(req.url, origin);
       const { pathname } = url;
-      if (req.method === 'GET' && staticPaths.has(pathname)) {
-        const filename = staticPaths.get(pathname);
-        const body = await fs.readFile(path.join(publicDir, filename));
-        res.writeHead(200, { 'Content-Type': assetTypes[path.extname(filename)] + '; charset=utf-8',
-          'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' });
-        return res.end(body);
+      if (url.origin !== origin) return json(res, 400, { error: 'Invalid local request URL' });
+      if (!pathname.startsWith('/api/')) {
+        return req.method === 'GET' ? await serveClient(res, pathname) : json(res, 404, { error: 'Not found' });
       }
-      const id = url.searchParams.get('environment');
-      if (id !== null && !scanner.has(id)) return json(res, 404, { error: 'Unknown environment' });
       if (req.method === 'GET' && pathname === '/api/health') {
         const mode = configuredSources.some(source => source.kind === 'emulator') ? 'local-mixed' : 'local-simulation';
         return json(res, 200, { status: 'ok', mode, providers, intervalMs });
       }
+      const user = auth.authenticate(req);
+      if (pathname.startsWith('/api/auth/')) return await auth.handle(req, res, url, user);
+      if (!user) return json(res, 401, { error: 'Sign in required.' });
+      if (req.method === 'POST') {
+        if (user.role !== 'admin') return json(res, 403, { error: 'Administrator access required.' });
+        auth.checkCsrf(req, user);
+      }
+      const id = url.searchParams.get('environment');
+      if (id !== null && !scanner.has(id)) return json(res, 404, { error: 'Unknown environment' });
       await initial;
       if (req.method === 'GET') {
         const data = dashboard(id);
@@ -150,13 +193,18 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       if (pathname === '/api/events') {
         const body = await parse(req);
         const environment = body.environment ?? body.provider + '-lab';
-        if (!safe(body.actor) || !safe(body.action) || !providers.includes(body.provider) ||
+        const { actor, action, provider, timestamp, resource, sourceIp, bytes, sensitive } = body;
+        if (!safe(actor) || !safe(action) || !providers.includes(provider) ||
             typeof body.timestamp !== 'string' || !Number.isFinite(Date.parse(body.timestamp)) ||
+            (resource !== undefined && !safe(resource)) || (sourceIp !== undefined && !safe(sourceIp)) ||
+            (bytes !== undefined && (!Number.isSafeInteger(bytes) || bytes < 0)) ||
+            (sensitive !== undefined && typeof sensitive !== 'boolean') ||
             !configuredSources.some(source => source.kind === 'fixture' && source.id === environment &&
               source.provider === body.provider) || (id !== null && id !== environment)) {
           return json(res, 400, { error: 'Invalid fixture event' });
         }
-        const event = { ...body, environment, eventId: 'EVT-' + randomUUID(), source: 'manual' };
+        const event = { actor, action, provider, timestamp, resource, sourceIp, bytes, sensitive,
+          environment, eventId: 'EVT-' + randomUUID(), source: 'manual' };
         events.push(event);
         incidents = detect(events);
         return json(res, 201, { event, incidents: dashboard(id).incidents });
@@ -172,18 +220,21 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       if (match[2] === 'investigate') return json(res, 200, await investigate(incident, env));
       const body = await parse(req);
       if (!['approve', 'reject'].includes(body.decision) ||
-          !['DISABLE_ACCESS_KEY', 'REMOVE_POLICY', 'QUARANTINE_INSTANCE'].includes(body.action) ||
-          !safe(body.approvedBy)) return json(res, 400, { error: 'Invalid response request' });
+          !['DISABLE_ACCESS_KEY', 'REMOVE_POLICY', 'QUARANTINE_INSTANCE'].includes(body.action)) {
+        return json(res, 400, { error: 'Invalid response request' });
+      }
       const log = {
         id: 'AUD-' + randomUUID(), incidentId: incident.id, decision: body.decision,
-        action: body.action, approvedBy: body.approvedBy, environment: 'simulation',
+        action: body.action, approvedBy: user.email, environment: 'simulation',
         sourceEnvironment: incident.environment, status: body.decision === 'approve' ? 'SIMULATED_SUCCESS' : 'REJECTED',
         timestamp: new Date().toISOString()
       };
-      audit.push(log);
+      store.addAudit('response', log);
       return json(res, 201, log);
     } catch (error) {
-      return json(res, error.status || (error instanceof SyntaxError ? 400 : 500), { error: error.message });
+      const status = error.status || (error instanceof SyntaxError ? 400 : 500);
+      if (status === 500) console.error('Request failed:', error.message);
+      return json(res, status, { error: status === 500 ? 'An internal error occurred.' : error.message });
     }
   });
 
@@ -196,18 +247,21 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     scanner.run();
     timer = setInterval(() => scanner.run(), intervalMs);
     timer.unref();
+    store.prune(Date.now());
+    pruning = setInterval(() => store.prune(Date.now()), 600000);
+    pruning.unref();
   });
-  app.on('close', () => clearInterval(timer));
+  app.on('close', () => { clearInterval(timer); clearInterval(pruning); store.close(); });
   return { app, rescan: () => scanner.run().then(() => dashboard(null).summary), summary: () => dashboard(null).summary };
 }
 
-const { app, rescan, summary } = createApp();
 if (require.main === module) {
   const port = Number(process.env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     console.error('PORT must be an integer from 0 to 65535.');
     process.exitCode = 1;
   } else {
+    const { app } = createApp();
     app.once('error', error => {
       console.error(error.code === 'EADDRINUSE'
         ? 'Port ' + port + ' is already in use. Set an available port in PowerShell with $env:PORT = "3153".'
@@ -220,4 +274,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { app, createApp, rescan, summary };
+module.exports = { createApp };

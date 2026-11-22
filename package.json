@@ -3,19 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "description": "Zero-cost multi-cloud security lab MVP",
+  "workspaces": ["client"],
   "scripts": {
-    "start": "node server/server.js",
+    "start": "node --env-file-if-exists=.env server/server.js",
+    "build": "npm run build --workspace cloudsentinel-client",
+    "dev:client": "npm run dev --workspace cloudsentinel-client",
+    "setup:admin": "node --env-file-if-exists=.env server/setup-admin.js",
     "test": "node --test",
     "benchmark": "node tests/benchmark.js",
     "test:floci": "node tests/floci-smoke.js",
     "demo:floci": "node tests/floci-demo.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.1175.0",
     "@aws-sdk/client-iam": "^3.1175.0",
-    "@aws-sdk/client-s3": "^3.1175.0"
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "openid-client": "^6.8.0"
   }
 }
