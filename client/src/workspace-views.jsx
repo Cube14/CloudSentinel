@@ -62,11 +62,11 @@ function FindingRows({ data, findings, open, overview = false }) {
     }))} />;
 }
 
-export function Environments({ data }) {
+export function Environments({ data, onSelect }) {
   return <Panel title="Environment health" icon={Activity} action={<span className="panel-meta">{data.summary.providers.length} in scope</span>}>
         <div className="source-list">{data.summary.providers.map(source => <div key={source.id} className="source-row">
           <span className="source-icon"><Box size={16} strokeWidth={1.6} /></span>
-          <div><strong>{source.label}</strong><span>{sourceTypes[source.kind]} · {connections[source.connection]}</span></div>
+          <div>{onSelect ? <button type="button" className="destination-source-link" onClick={() => onSelect(source.id)}>{source.label}</button> : <strong>{source.label}</strong>}<span>{sourceTypes[source.kind]} · {connections[source.connection]}</span></div>
           <Pill value={source.status}>{statuses[source.status]}</Pill>
           <time dateTime={source.lastSnapshot || undefined} title={'Last snapshot: ' + time(source.lastSnapshot) +
             ' · Last attempt: ' + time(source.lastAttempt)}>{shortTime(source.lastSnapshot)}</time>
@@ -138,17 +138,17 @@ export function Findings({ data, open, identity = false }) {
   </Panel>;
 }
 
-export function Assets({ data, open }) {
+export function Assets({ data, open, identity = false }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
   const query = useDeferredValue(search.trim().toLowerCase());
-  const filtered = data.assets.filter(asset => (!filter || filter === asset.type) &&
+  const filtered = data.assets.filter(asset => (!identity || asset.type === 'identity') && (!filter || filter === asset.type) &&
     matching(query, [asset.name, asset.id, asset.type, sourceName(data, asset.environment)]));
-  return <Panel title="Asset inventory" icon={Box} action={<span className="panel-meta" aria-live="polite">{filtered.length} results</span>}>
+  return <Panel title={identity ? 'Identity inventory' : 'Asset inventory'} icon={Box} action={<span className="panel-meta" aria-live="polite">{filtered.length} results</span>}>
     <div className="explorer-toolbar"><SearchField label="Search assets" value={search} onChange={setSearch} />
-      <label>Type<select value={filter} onChange={event => setFilter(event.target.value)}>
+      {!identity && <label>Type<select value={filter} onChange={event => setFilter(event.target.value)}>
         <option value="">All asset types</option>{Object.entries(typeNames).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label></div>
+      </select></label>}</div>
     <Table headers={['Resource', 'Type', 'Environment', 'Open findings', '']} empty="No assets match this view."
       rows={filtered.map(asset => {
         const id = assetKey(asset);

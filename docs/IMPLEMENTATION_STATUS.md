@@ -1,6 +1,16 @@
 # Implementation status
 
-## Persistent workspace stage
+## Carousel navigation
+
+The authenticated landing at `/workspace` is an eight-destination media ring. It selects via wheel, touch drag, arrow keys, or destination controls. One demand-rendered canvas carries the camera flight and reverse flight. Each destination has its own early-loading poster, muted looping WebM, editorial typography, and an operations section. `/workspace/overview` is the posture page, and the existing `/workspace/topology` URL opens the topology section in Assets. The phase director reconciles direct routes and browser history.
+
+All eight silent 512 × 288 reels are original procedural work from `client/generate-stage-media.html`. Only the selected carousel screen plays video. A destination stops playback offscreen. Effects and reduced-motion modes use stills, and WebGL context loss uses a navigable poster ring. Source waypoints, metrics, evidence, and inventory use the existing authenticated API. Backend behavior and fixtures are unchanged. See [motion storyboard](motion-storyboard.md).
+
+Authenticated Edge QA passed at 390, 768, 1440, and 1920 CSS pixels. It covered touch and wheel rotation, keyboard wraparound, a full loop, WebGL screen picking, reverse flight, direct URLs, browser Back and Forward, a manual scan, recorded findings and recommendations, embedded topology, Ollama, reduced-motion stills, and forced WebGL loss. The browser used isolated fixture inventory and reported no console errors. The six targeted tests and all 34 tests passed. The production build passed with a size warning on the shared 243 kB gzip WebGL chunk. The benchmark matched 21 of 21 synthetic scenarios.
+
+The responsive contact sheet and the 38-second browser tour are in `results/carousel-qa/`.
+
+## Persistent workspace stage (previous design)
 
 The same WebGL canvas and camera now carry Overview, Environments, Topology, Findings, Assets, Identity, Threats, AI Analyst, and Audit. Each route has a camera pose and a matching procedural reel. The operational panel stays in document flow and can be reached from the stage or by scrolling. Findings open their existing records with evidence and recommendations. Resource geometry and links retain the existing inventory and provenance rules.
 

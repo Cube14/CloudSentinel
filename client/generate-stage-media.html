@@ -8,11 +8,23 @@ const ctx = canvas.getContext('2d');
 const { width, height } = canvas;
 const TAU = Math.PI * 2;
 
-function frame(style, t) {
+const subjects = {
+  overview: ['vault', '#3b5977', 0],
+  environments: ['signal', '#285c64', 1],
+  findings: ['trace', '#634d68', 2],
+  assets: ['vault', '#28598b', 3],
+  identity: ['signal', '#484a83', 4],
+  threats: ['trace', '#6d523b', 5],
+  analyst: ['signal', '#34696e', 6],
+  audit: ['vault', '#506174', 7],
+};
+
+function frame(subject, t) {
+  const [style, tint, motif] = subjects[subject] || [subject, '#345587', 0];
   const horizon = height * .48;
-  const vanishing = width * (.5 + Math.sin(t * TAU) * .06);
+  const vanishing = width * (.5 + Math.sin(t * TAU + motif * .64) * .11);
   const base = ctx.createRadialGradient(vanishing, horizon, 0, vanishing, horizon, width * .63);
-  base.addColorStop(0, style === 'trace' ? '#32536a' : '#345587');
+  base.addColorStop(0, tint);
   base.addColorStop(1, '#050811');
   ctx.fillStyle = base; ctx.fillRect(0, 0, width, height);
 
@@ -63,6 +75,25 @@ function frame(style, t) {
       line(vanishing, horizon, width * (.5 + edge * .49), height * .085);
     }
   }
+  ctx.save();
+  ctx.translate(vanishing, horizon);
+  ctx.strokeStyle = '#b3d9ef55';
+  ctx.lineWidth = .7;
+  if (motif % 2) {
+    for(let i = 0; i < 11; i++) {
+      const a = i / 11 * TAU + t * TAU;
+      const p = 42 + 6 * motif;
+      line(Math.cos(a) * p, Math.sin(a) * p * .48, Math.cos(a) * p * 1.7, Math.sin(a) * p * .65);
+    }
+  } else {
+    for(let i = 0; i < 5 + motif; i++) {
+      const y = (i - 3) * 13;
+      const offset = Math.sin(i * .9 + t * TAU) * 38;
+      line(-118 + offset, y, -78 + offset * .4, y);
+      line(78 - offset * .4, -y, 118 - offset, -y);
+    }
+  }
+  ctx.restore();
   const beam = ctx.createLinearGradient(0, horizon - 28, 0, horizon + 28);
   beam.addColorStop(0, '#83b2ff00'); beam.addColorStop(.5, '#83b2ff23'); beam.addColorStop(1, '#83b2ff00');
   ctx.fillStyle = beam; ctx.fillRect(0, horizon - 28, width, 56);
