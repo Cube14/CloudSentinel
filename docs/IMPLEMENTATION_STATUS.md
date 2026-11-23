@@ -1,6 +1,14 @@
 # Implementation status
 
-## Carousel navigation
+## Cinematic landing and access
+
+The public site opens on the workspace's server footage and uses scroll-linked chapters for posture detection, incident correlation, and investigation. The opt-in product preview reuses the authenticated carousel renderer with poster frames and descriptions of each destination. Account pages share a single access reel and an original vector aperture. Signup and login preserve the backdrop through the mode switch. Successful authentication opens the existing carousel, and sign-out returns to the landing page once the server clears the session. All eight destination headers share the same silver typography treatment. Threats uses a new lens-iris cut and a matching poster.
+
+Authenticated Edge QA covered landing, login, signup, and all eight destination routes at 390, 768, 1440, and 1920 CSS pixels. It exercised viewer signup and admin login, credential validation, sign-out, OAuth button gating, the public preview, shared carousel playback, reduced motion, Data Saver, and forced WebGL context loss. OAuth callbacks were covered by the local protocol fixture. Browser widths were emulated. The browser used isolated fixture data.
+
+All 36 automated tests passed, including 10 targeted media, carousel, auth, and OIDC tests. The production build passed with the existing lazy WebGL chunk size warning. The synthetic benchmark matched 21 of 21 scenarios. The responsive contact sheet and interaction recording are in `results/public-qa/`. See [media licenses](media-licenses.md) and [editing references](media-candidates.md).
+
+## Carousel navigation (initial implementation)
 
 The authenticated landing at `/workspace` is an eight-destination media ring. It selects via wheel, touch drag, arrow keys, or destination controls. One demand-rendered canvas carries the camera flight and reverse flight. Each destination has its own early-loading poster, muted looping WebM, editorial typography, and an operations section. `/workspace/overview` is the posture page, and the existing `/workspace/topology` URL opens the topology section in Assets. The phase director reconciles direct routes and browser history.
 
@@ -54,7 +62,7 @@ Verified November 22, 2026. The scanner supports named fixture, emulator, and li
 - `npm run build` passed. The local Floci read-only smoke passed with 20 assets and 12 findings.
 - Real AWS account verification was pending authorized credentials. See [SSO, configuration, least-privilege policy and scope](cloud-sources.md).
 
-## Cinematic landing and SOC workspace
+## Cinematic landing and SOC workspace (previous design)
 
 The browser UI now uses an obsidian and midnight-blue palette with silver typography and status-specific accents. The full-height landing introduces the platform through a procedural 3D network illustration and a scroll-linked architecture walkthrough. The login and signup screens share that visual language with a split desktop layout and a static atmospheric backdrop on phones. The dashboard is prepared during sign-in and shows scoped skeletons during its first fetch.
 

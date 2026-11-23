@@ -7,7 +7,7 @@ export const framing = {
   findings: [.52, .48],
   assets: [.57, .51],
   identity: [.52, .50],
-  threats: [.54, .48],
+  threats: [.50, .49],
   analyst: [.50, .48],
   audit: [.55, .49],
 };

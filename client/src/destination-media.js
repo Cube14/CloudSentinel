@@ -27,9 +27,24 @@ export function allowsVideo() {
   return !navigator.connection?.saveData && !matchMedia('(prefers-reduced-data: reduce)').matches;
 }
 
+export function useVideoPermission() {
+  const [permitted, setPermitted] = useState(allowsVideo);
+  useEffect(() => {
+    const preference = matchMedia('(prefers-reduced-data: reduce)');
+    function update() { setPermitted(allowsVideo()); }
+    preference.addEventListener('change', update);
+    navigator.connection?.addEventListener('change', update);
+    return () => {
+      preference.removeEventListener('change', update);
+      navigator.connection?.removeEventListener('change', update);
+    };
+  }, []);
+  return permitted;
+}
+
 export function useDestinationFilm(id, enabled, playing) {
   const [visible, setVisible] = useState(() => !document.hidden);
-  const [permitted, setPermitted] = useState(allowsVideo);
+  const permitted = useVideoPermission();
   const [presented, setPresented] = useState(null);
   const film = useMemo(() => {
     if (!enabled || !permitted) return null;
@@ -51,17 +66,9 @@ export function useDestinationFilm(id, enabled, playing) {
   }, [id, enabled, permitted]);
 
   useEffect(() => {
-    const preference = matchMedia('(prefers-reduced-data: reduce)');
-    function update() { setPermitted(allowsVideo()); }
     function show() { setVisible(!document.hidden); }
     document.addEventListener('visibilitychange', show);
-    preference.addEventListener('change', update);
-    navigator.connection?.addEventListener('change', update);
-    return () => {
-      document.removeEventListener('visibilitychange', show);
-      preference.removeEventListener('change', update);
-      navigator.connection?.removeEventListener('change', update);
-    };
+    return () => document.removeEventListener('visibilitychange', show);
   }, []);
 
   useEffect(() => {
