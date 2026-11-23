@@ -40,7 +40,7 @@
   transform:scale(calc(1 + 1.55 * var(--travel,0)))}
 .carousel-2d button{border:1px solid #253952;padding:0;width:100%;min-width:0;background:#0b1220;opacity:.62;overflow:hidden}
 .carousel-2d .poster-front{opacity:1;border-color:#536d91}
-.carousel-2d img{display:block;width:100%;aspect-ratio:1.9;object-fit:cover;user-select:none}
+.carousel-2d img{display:block;width:100%;aspect-ratio:1.9;object-fit:cover;object-position:var(--film-focus);user-select:none}
 .destination-experience{position:relative;z-index:2;background:#0a111c;min-height:100svh;overflow:clip;color:#edf2fa;
   clip-path:inset(0 calc((1 - var(--portal-cover,0)) * 51%) 0 calc((1 - var(--portal-cover,0)) * 51%))}
 .destination-experience[data-phase=PAGE_ACTIVE]{clip-path:none}
@@ -53,9 +53,16 @@
 .destination-plate{position:absolute;inset:-2.5%;z-index:-1;pointer-events:none;
   scale:calc(1 + (1 - var(--portal-cover,1)) * .25);
   transform:translate3d(var(--film-x,0px),var(--film-y,0px),0);transition:transform .44s cubic-bezier(.19,1,.22,1)}
-.destination-film{z-index:0;filter:saturate(.90) contrast(1.05) brightness(1.06)}
+.destination-film{z-index:0;object-position:var(--film-focus,50% 50%);filter:saturate(.96) contrast(1.02)}
+.destination-ambient{display:none}
+@media(orientation:portrait){
+  .destination-ambient{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    object-position:var(--film-focus,50% 50%);filter:blur(29px) brightness(.46);scale:1.1}
+  .destination-plate .destination-film{inset:40% 0 auto;height:auto;aspect-ratio:16/9;object-fit:contain;
+    transform:translateY(-40%);mask-image:linear-gradient(180deg,transparent,#000 13%,#000 88%,transparent)}
+}
 .destination-live-film{z-index:1}
-.destination-film-grain{position:absolute;inset:-6%;z-index:0;opacity:.135;pointer-events:none;
+.destination-film-grain{position:absolute;inset:-6%;z-index:0;opacity:.08;pointer-events:none;
   background:url('./media/film-grain.svg?no-inline') repeat;mix-blend-mode:soft-light}
 .workspace-portal[data-effects=on] .destination-hero[data-film-in-view=true] .destination-film-grain{
   animation:film-grain .72s steps(1,end) infinite}
@@ -66,8 +73,8 @@
   72%{transform:translate3d(-1%,2%,0)}
 }
 
-.destination-shade{z-index:0;opacity:calc(.69 + .31 * var(--portal-cover,1));background:linear-gradient(90deg,#060a12dd,#060a1261 53%,#060a1244),
-  linear-gradient(180deg,#05080f80,transparent 40%,#080d19ec)}
+.destination-shade{z-index:0;opacity:calc(.69 + .31 * var(--portal-cover,1));background:linear-gradient(90deg,#060a12c2,#060a123b 50%,#060a1214),
+  linear-gradient(180deg,#05080f6e,transparent 38%,#080d19e0)}
 .destination-title{position:relative;z-index:1;max-width:100%;justify-self:start}
 .destination-title h1{font:570 clamp(3.3rem,12vw,13rem)/.83 var(--display);letter-spacing:-.09em;max-width:100%;overflow-wrap:anywhere;
   margin:0 0 clamp(22px,4vw,52px);color:#f2f6fb;text-shadow:0 4px 38px #050813}
@@ -77,9 +84,9 @@
   background:#0a111eab;font-size:.82rem;font-weight:740}
 .destination-content-link:hover{background:#22344c}
 .destination-signals .destination-title,.destination-analysis .destination-title{justify-self:center;text-align:center}
-.destination-signals .destination-shade,.destination-analysis .destination-shade{background:radial-gradient(ellipse,#0e152270,#090e17da)}
+.destination-signals .destination-shade,.destination-analysis .destination-shade{background:radial-gradient(ellipse,#070c154a,#090e17b2)}
 .destination-access .destination-title,.destination-history .destination-title{justify-self:end;text-align:right}
-.destination-access .destination-shade,.destination-history .destination-shade{background:linear-gradient(270deg,#060a12e6,#060a123b 80%)}
+.destination-access .destination-shade,.destination-history .destination-shade{background:linear-gradient(270deg,#060a12c2,#060a121a 80%)}
 .destination-analysis .destination-title h1,.destination-history .destination-title h1{font-family:'Instrument Serif',Georgia,serif;letter-spacing:-.055em;font-weight:400}
 .destination-sources .destination-title h1{letter-spacing:-.07em}
 .destination-incidents .destination-title h1{transform:skewX(-5deg)}

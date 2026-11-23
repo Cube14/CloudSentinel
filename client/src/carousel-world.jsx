@@ -3,9 +3,11 @@ import { ArrowDownRight, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, LogOu
 import { Brand } from './brand';
 import { destinations, phases } from './carousel-state';
 import { destinationMedia, useMediaVisible } from './destination-media';
+import { framing } from './media-framing';
 import './carousel-world.css';
 
 const Scene = lazy(() => import('./carousel-scene'));
+const focalPosition = id => framing[id].map(value => value * 100 + '%').join(' ');
 const canRotate = phase => [phases.idle, phases.rotating, phases.selected].includes(phase);
 
 class RendererBoundary extends Component {
@@ -21,7 +23,7 @@ function PosterRing({ selected, choose }) {
     const item = destinations[(index + destinations.length) % destinations.length];
     return <button type="button" tabIndex={-1} onClick={() => choose(destinations.indexOf(item))}
       className={step === 1 ? 'poster-front' : ''} key={item.id} aria-label={'Select ' + item.title}>
-      <img alt="" draggable="false" src={destinationMedia(item.id).poster} />
+      <img alt="" draggable="false" src={destinationMedia(item.id).poster} style={{ '--film-focus': focalPosition(item.id) }} />
     </button>;
   })}</div>;
 }
@@ -195,7 +197,8 @@ export function DestinationPage({ destination, phase, machine, cinematic, reduce
     plate.current.style.setProperty('--film-y', ((event.clientY - bounds.top) / bounds.height - .5) * 11 + 'px');
   }
   return <section className={'destination-experience destination-' + destination.style} ref={section} data-phase={phase}
-    style={{ '--destination-tone': destination.tone, '--portal-cover': machine.frame.cover }}
+    style={{ '--destination-tone': destination.tone, '--portal-cover': machine.frame.cover,
+      '--film-focus': focalPosition(destination.id) }}
     inert={!active} aria-label={destination.title}>
     <header className="destination-mast">
       <button className="destination-back" type="button" onClick={machine.back}><ArrowLeft size={19} /> <span>Back to carousel</span></button>
@@ -206,6 +209,7 @@ export function DestinationPage({ destination, phase, machine, cinematic, reduce
       plate.current.style.removeProperty('--film-x'); plate.current.style.removeProperty('--film-y');
     }}>
       <div className="destination-plate" ref={plate} aria-hidden="true">
+        <img className="destination-ambient" src={media.poster} alt="" />
         <img className="destination-film" src={media.poster} alt="" />
       </div>
       <div className="destination-film-grain" aria-hidden="true" />

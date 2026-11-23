@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { BackSide, SRGBColorSpace, TextureLoader, Vector2, VideoTexture } from 'three';
+import { BackSide, SRGBColorSpace, TextureLoader, Vector2, Vector4, VideoTexture } from 'three';
 import { destinations } from './carousel-state';
+import { coverWindow, framing, reelAspect } from './media-framing';
 import { destinationMedia } from './destination-media';
 
 const cameraSettings = { fov: 42, near: .08, far: 80 };
@@ -10,6 +11,7 @@ const interval = 2 * Math.PI / destinations.length;
 const aspect = 1.96;
 const arc = interval * .90;
 const panelHeight = radius * arc / aspect;
+const panelAspect = 2 * radius * Math.sin(arc / 2) / panelHeight;
 
 const gradedMap = `
 #ifdef USE_MAP
@@ -18,14 +20,14 @@ const gradedMap = `
   float radius = dot(center, center);
   imageUv += filmPointer * .012 * filmStrength;
   imageUv += center * radius * .014 * filmStrength;
-  vec4 sampledDiffuseColor = texture2D(map, clamp(imageUv, .002, .998));
+  vec4 sampledDiffuseColor = texture2D(map, filmCrop.zw + clamp(imageUv, .002, .998) * filmCrop.xy);
   #ifdef DECODE_VIDEO_TEXTURE
     sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
   #endif
   float grain = fract(sin(dot(floor(vMapUv * vec2(758.,432.)),vec2(12.9898,78.233))
     + floor(filmTime * 24.)*.137) * 43758.5453) - .5;
   float wash = exp(-10. * abs(vMapUv.x * .94 + vMapUv.y * .19 - (.54 + sin(filmTime * .65) * .18)));
-  sampledDiffuseColor.rgb = max(vec3(0.), sampledDiffuseColor.rgb * (1. - radius * .17 + grain * .105 * filmStrength)
+  sampledDiffuseColor.rgb = max(vec3(0.), sampledDiffuseColor.rgb * (1. - radius * .08 + grain * .065 * filmStrength)
     + filmStrength * vec3(.010,.017,.027) * wash);
   diffuseColor *= sampledDiffuseColor;
 #endif
@@ -37,14 +39,16 @@ function Screen({ index, selected, interactive, onSelect, film, grade }) {
   const [moving, setMoving] = useState(null);
   const invalidate = useThree(state => state.invalidate);
   const strength = useMemo(() => ({ value: 0 }), []);
+  const crop = useMemo(() => ({ value: new Vector4(...coverWindow(reelAspect, panelAspect, framing[destinations[index].id])) }), [index]);
   const configure = useMemo(() => shader => {
     shader.uniforms.filmPointer = grade.pointer;
     shader.uniforms.filmTime = grade.time;
     shader.uniforms.filmStrength = strength;
+    shader.uniforms.filmCrop = crop;
     shader.fragmentShader = shader.fragmentShader.replace('#include <map_pars_fragment>',
-      '#include <map_pars_fragment>\nuniform vec2 filmPointer;\nuniform float filmTime;\nuniform float filmStrength;')
+      '#include <map_pars_fragment>\nuniform vec2 filmPointer;\nuniform float filmTime;\nuniform float filmStrength;\nuniform vec4 filmCrop;')
       .replace('#include <map_fragment>', gradedMap);
-  }, [grade, strength]);
+  }, [grade, strength, crop]);
   strength.value = selected ? 1 : 0;
   const angle = Math.PI - index * interval - arc / 2;
   useEffect(() => {
@@ -80,7 +84,7 @@ function Screen({ index, selected, interactive, onSelect, film, grade }) {
       <cylinderGeometry args={[radius, radius, panelHeight, 28, 1, true, angle, arc]} />
       <meshBasicMaterial side={BackSide} map={lens} key={playing ? 'video' : lens ? 'poster' : 'empty'}
         onBeforeCompile={configure}
-        color={lens ? selected ? '#f0f6ff' : '#91a4bf' : '#142035'} toneMapped={false} />
+        color={lens ? selected ? '#ffffff' : '#a0adbf' : '#142035'} toneMapped={false} />
     </mesh>
     <mesh position={[0, -panelHeight - .03, 0]} scale={[1, -1, 1]}>
       <cylinderGeometry args={[radius + .02, radius + .02, panelHeight * .83, 16, 1, true, angle, arc]} />
