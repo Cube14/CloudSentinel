@@ -1,5 +1,11 @@
 # Implementation status
 
+## Opt-in LAN HTTPS
+
+Caddy terminates HTTPS on a selected private interface and forwards sanitized requests to loopback Node. An ephemeral proxy token authenticates forwarding metadata. LAN cookies are Secure and separate from direct localhost sessions. Local Google OIDC remains available as configured, while LAN OAuth requires its own explicitly registered HTTPS DNS callback.
+
+The Windows host detected Wi-Fi address `172.20.10.2/28` with a Public profile. Caddy v2.11.9 passed isolated loopback HTTPS checks with a dedicated CA, including request origin, spoofing, auth, persistence across requests, dashboard, WebM delivery, a live read-only Floci scan, and Ollama readiness. The 36-test baseline and all 40 final tests passed. Production build passed, and the synthetic benchmark matched all 21 scenarios. No trust store, firewall or profile changes were made. Second-device reachability, playback, Floci and Ollama over the LAN await approved network and device setup. See the [LAN deployment guide](lan-deployment.md).
+
 ## Cinematic landing and access
 
 The public site opens on the workspace's server footage and uses scroll-linked chapters for posture detection, incident correlation, and investigation. The opt-in product preview reuses the authenticated carousel renderer with poster frames and descriptions of each destination. Account pages share a single access reel and an original vector aperture. Signup and login preserve the backdrop through the mode switch. Successful authentication opens the existing carousel, and sign-out returns to the landing page once the server clears the session. All eight destination headers share the same silver typography treatment. Threats uses a new lens-iris cut and a matching poster.

@@ -1,16 +1,26 @@
 'use strict';
 
+const { isIP } = require('node:net');
 const { localEndpoint } = require('../local-endpoint');
 const callbackPath = '/api/auth/google/callback';
 
-function createGoogle(env, customFetch) {
+function createGoogle(env, customFetch, lanOrigin) {
   const id = env.GOOGLE_CLIENT_ID?.trim();
   const secret = env.GOOGLE_CLIENT_SECRET?.trim();
   const redirect = env.GOOGLE_REDIRECT_URI?.trim();
   if (!id || !secret || !redirect) return null;
   const callback = new URL(redirect);
-  localEndpoint(callback.origin);
-  if (callback.href !== callback.origin + callbackPath) throw new Error('GOOGLE_REDIRECT_URI must be the local Google callback URL');
+  if (lanOrigin) {
+    const host = lanOrigin.hostname;
+    if (callback.origin !== lanOrigin.origin || lanOrigin.port || isIP(host) ||
+        !/\.[a-z]{2,}$/.test(host) || /\.(?:local|localhost|internal|lan|test|invalid|example|onion)$/.test(host) ||
+        host.endsWith('.home.arpa')) {
+      throw new Error('LAN Google OAuth requires the canonical HTTPS registered DNS domain on port 443');
+    }
+  } else {
+    localEndpoint(callback.origin);
+  }
+  if (redirect !== callback.origin + callbackPath) throw new Error('Google redirect must match the exact callback URL');
 
   let config;
   async function configuration() {

@@ -11,10 +11,10 @@ const { loadConnectors } = require('./connectors/config');
 const { investigate, ollamaStatus } = require('./investigation');
 const { createAuth } = require('./auth');
 const { databasePath, openStore } = require('./auth/store');
-const { localEndpoint } = require('./local-endpoint');
+const { configureBoundary } = require('./lan-proxy');
 
 const root = path.resolve(__dirname, '..');
-const clientDir = path.join(root, 'client', 'dist');
+const defaultClientDir = path.join(root, 'client', 'dist');
 const safe = value => typeof value === 'string' && value.trim().length > 0 && value.length < 128;
 const assetTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.txt': 'text/plain', '.webm': 'video/webm', '.webp': 'image/webp' };
@@ -40,7 +40,7 @@ async function parse(req, limit = 1000000) {
   return body;
 }
 
-async function serveClient(res, pathname) {
+async function serveClient(res, pathname, clientDir) {
   const asset = pathname === '/mark.svg' || /^\/assets\/[a-zA-Z0-9_.-]+$/.test(pathname);
   const page = pathname === '/' || pathname === '/login' || pathname === '/signup' ||
     pathname === '/workspace' || pathname.startsWith('/workspace/');
@@ -62,7 +62,7 @@ async function serveClient(res, pathname) {
 }
 
 function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures'), sources,
-  dbPath = databasePath(env), oidcFetch } = {}) {
+  dbPath = databasePath(env), oidcFetch, clientDir = defaultClientDir } = {}) {
   const intervalMs = Number(env.SCAN_INTERVAL_MS ?? 15000);
   if (!Number.isInteger(intervalMs) || intervalMs < 1000 || intervalMs > 2147483647) {
     throw new Error('SCAN_INTERVAL_MS must be an integer from 1000 to 2147483647');
@@ -73,11 +73,11 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     configuredSources.push(...loadConnectors(env.CLOUD_SOURCES_FILE, root, configuredSources.map(source => source.id)));
   }
   const scanner = createScanner(configuredSources);
-  const devOrigin = env.CLIENT_DEV_ORIGIN ? localEndpoint(env.CLIENT_DEV_ORIGIN) : null;
+  const boundary = configureBoundary(env);
   const store = openStore(dbPath);
   let auth;
   try {
-    auth = createAuth({ store, env, json, parse, oidcFetch });
+    auth = createAuth({ store, env, json, parse, oidcFetch, lanOrigin: boundary.lanOrigin });
   } catch (error) {
     store.close();
     throw error;
@@ -133,20 +133,15 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     try {
-      const port = app.address().port;
-      const hosts = ['localhost:' + port, '127.0.0.1:' + port];
-      if (port === 80) hosts.push('localhost', '127.0.0.1');
-      if (!hosts.includes(req.headers.host)) return json(res, 403, { error: 'Expected a local request' });
-      const origin = new URL('http://' + req.headers.host).origin;
-      if (req.method !== 'GET' && req.headers.origin &&
-          req.headers.origin !== origin && req.headers.origin !== devOrigin) {
-        return json(res, 403, { error: 'Expected a local request from this origin' });
-      }
+      const request = boundary.request(req, app.address().port);
+      if (!request) return json(res, 403, { error: 'Unapproved request host, origin or proxy' });
+      const { origin, proxy } = request;
+      req.lanProxy = proxy;
       const url = new URL(req.url, origin);
       const { pathname } = url;
       if (url.origin !== origin) return json(res, 400, { error: 'Invalid local request URL' });
       if (!pathname.startsWith('/api/')) {
-        return req.method === 'GET' ? await serveClient(res, pathname) : json(res, 404, { error: 'Not found' });
+        return req.method === 'GET' ? await serveClient(res, pathname, clientDir) : json(res, 404, { error: 'Not found' });
       }
       if (req.method === 'GET' && pathname === '/api/health') {
         const mode = configuredSources.some(source => source.kind !== 'fixture' && source.collect) ? 'local-mixed' : 'local-simulation';

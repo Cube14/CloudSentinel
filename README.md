@@ -105,3 +105,7 @@ Read routes accept an optional `?environment=aws-lab`, `azure-lab`, `gcp-lab`, o
 See [implementation status](docs/IMPLEMENTATION_STATUS.md), [architecture](docs/architecture.md), [benchmark and comparison protocol](docs/experiments.md), and [security limitations](docs/limitations.md).
 
 The React interface uses locally packaged Manrope, Space Grotesk, and Instrument Serif under the SIL Open Font License. License notices ship in the [client assets](client/public/assets/). The network illustration is original SVG.
+
+## HTTPS on a trusted LAN
+
+Run `./scripts/start-lan.ps1 -Plan` in PowerShell to detect the address, subnet and network profile. The optional Caddy setup serves HTTPS on that private interface while Node stays on loopback. Follow the [LAN deployment guide](docs/lan-deployment.md) for startup, the Private-profile firewall rule, certificate trust and second-device checks.

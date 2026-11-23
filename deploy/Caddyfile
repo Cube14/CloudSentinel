@@ -1,0 +1,33 @@
+{
+	admin off
+	persist_config off
+	auto_https disable_redirects
+	skip_install_trust
+	default_sni {$CS_CADDY_HOST}
+	storage file_system {
+		root "{$CS_CADDY_DATA}"
+	}
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$CS_CADDY_ORIGIN} {
+	bind {$CS_CADDY_BIND}
+	tls internal
+	@outside not remote_ip {$CS_CADDY_SUBNET}
+	respond @outside 403
+
+	request_header -Forwarded
+	request_header -X-Forwarded-*
+	request_header -X-Real-IP
+	request_header -X-CloudSentinel-*
+	reverse_proxy 127.0.0.1:{$CS_NODE_PORT} {
+		header_up X-CloudSentinel-Proxy {$LAN_PROXY_TOKEN}
+	}
+}
+
+https://:{$CS_CADDY_PORT} {
+	bind {$CS_CADDY_BIND}
+	respond 403
+}

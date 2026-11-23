@@ -17,11 +17,11 @@ async function seedAdmin(dbPath) {
   finally { store.close(); }
 }
 
-function client(base) {
+function client(base, fetcher = fetch) {
   const cookies = new Map();
   let csrf;
   async function request(route, { method = 'GET', body, headers, token = csrf } = {}) {
-    const response = await fetch(base + route, {
+    const response = await fetcher(base + route, {
       method, redirect: 'manual',
       headers: {
         Cookie: [...cookies].map(([name, value]) => name + '=' + value).join('; '),

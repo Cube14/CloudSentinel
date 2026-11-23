@@ -11,13 +11,16 @@ const minutes = value => value * 60000;
 const authWindow = minutes(10);
 
 function cookie(req, name) {
+  if (req.lanProxy) name = '__Host-' + name;
   const value = req.headers.cookie?.split(';').map(entry => entry.trim())
     .find(entry => entry.startsWith(name + '='))?.slice(name.length + 1);
   return tokenPattern.test(value || '') ? value : null;
 }
 
-function setCookie(res, name, value, lifetime, sameSite = 'Strict') {
-  res.appendHeader('Set-Cookie', name + '=' + value + '; Path=/; HttpOnly; SameSite=' + sameSite + '; Max-Age=' + lifetime);
+function setCookie(req, res, name, value, lifetime, sameSite = 'Strict') {
+  const secure = req.lanProxy ? '; Secure' : '';
+  if (req.lanProxy) name = '__Host-' + name;
+  res.appendHeader('Set-Cookie', name + '=' + value + '; Path=/; HttpOnly; SameSite=' + sameSite + '; Max-Age=' + lifetime + secure);
 }
 
 function publicUser(user) {
@@ -32,8 +35,14 @@ function recordAccount(store, action, user) {
   store.addAudit('auth', { id: randomUUID(), action, actor: user?.email || null, timestamp: new Date().toISOString() });
 }
 
-function createAuth({ store, env, json, parse, oidcFetch }) {
-  const google = createGoogle(env, oidcFetch);
+function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
+  const localGoogle = createGoogle(env, oidcFetch);
+  const lanGoogle = lanOrigin && env.LAN_GOOGLE_REDIRECT_URI ? createGoogle({
+    GOOGLE_CLIENT_ID: env.LAN_GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: env.LAN_GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI: env.LAN_GOOGLE_REDIRECT_URI,
+  }, oidcFetch, lanOrigin) : null;
+  const googleFor = req => req.lanProxy ? lanGoogle : localGoogle;
   const sessionSeconds = Number(env.AUTH_SESSION_TTL_SECONDS || 28800);
   if (!Number.isInteger(sessionSeconds) || sessionSeconds < 60 || sessionSeconds > 604800) {
     throw new Error('AUTH_SESSION_TTL_SECONDS must be an integer from 60 to 604800');
@@ -56,9 +65,9 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
     let csrf = user?.csrf || cookie(req, cookieNames.csrf);
     if (!csrf) {
       csrf = randomToken();
-      setCookie(res, cookieNames.csrf, csrf, 3600);
+      setCookie(req, res, cookieNames.csrf, csrf, 3600);
     }
-    return { csrf, user: publicUser(user), googleEnabled: Boolean(google) };
+    return { csrf, user: publicUser(user), googleEnabled: Boolean(googleFor(req)) };
   }
 
   function issue(req, user, action) {
@@ -71,11 +80,11 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
     return { token, csrf, user };
   }
 
-  function sessionResponse(res, { token, csrf, user }) {
-    setCookie(res, cookieNames.session, token, sessionSeconds);
-    setCookie(res, cookieNames.csrf, '', 0);
-    setCookie(res, cookieNames.google, '', 0, 'Lax');
-    return { csrf, user: publicUser(user), googleEnabled: Boolean(google) };
+  function sessionResponse(req, res, { token, csrf, user }) {
+    setCookie(req, res, cookieNames.session, token, sessionSeconds);
+    setCookie(req, res, cookieNames.csrf, '', 0);
+    setCookie(req, res, cookieNames.google, '', 0, 'Lax');
+    return { csrf, user: publicUser(user), googleEnabled: Boolean(googleFor(req)) };
   }
 
   function rate(res, key, max) {
@@ -94,7 +103,8 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
 
   async function handle(req, res, url, user) {
     const { pathname } = url;
-    const ip = req.socket.remoteAddress;
+    const ip = req.lanProxy?.ip ?? req.socket.remoteAddress;
+    const google = googleFor(req);
     if (req.method === 'GET' && pathname === '/api/auth/session') {
       return json(res, 200, state(req, res, user));
     }
@@ -112,7 +122,7 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
       }
       const flow = store.takeFlow(flowToken, state);
       if (!flow) return redirect(res, '/login?oauth=failed');
-      setCookie(res, cookieNames.google, '', 0, 'Lax');
+      setCookie(req, res, cookieNames.google, '', 0, 'Lax');
       try {
         const claims = await google.finish(url, flow);
         const email = normalizeEmail(claims?.email);
@@ -128,7 +138,7 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
           }
           return issue(req, account, 'google-login');
         });
-        sessionResponse(res, result);
+        sessionResponse(req, res, result);
       } catch {
         return redirect(res, '/login?oauth=failed');
       }
@@ -144,17 +154,17 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
         store.revokeFlow(cookie(req, cookieNames.google));
         recordAccount(store, 'logout', user);
       });
-      setCookie(res, cookieNames.session, '', 0);
-      setCookie(res, cookieNames.google, '', 0, 'Lax');
+      setCookie(req, res, cookieNames.session, '', 0);
+      setCookie(req, res, cookieNames.google, '', 0, 'Lax');
       const csrf = randomToken();
-      setCookie(res, cookieNames.csrf, csrf, 3600);
-      return json(res, 200, { csrf, user: null, googleEnabled: Boolean(google) });
+      setCookie(req, res, cookieNames.csrf, csrf, 3600);
+      return json(res, 200, { csrf, user: null, googleEnabled: Boolean(googleFor(req)) });
     }
 
     if (pathname === '/api/auth/google/start') {
       if (!google) throw problem(404, 'Google sign-in is unavailable.');
       if (user) throw problem(409, 'Sign out before continuing with Google.');
-      if (url.origin !== google.origin) throw problem(400, 'Open the configured local Google redirect origin to sign in.');
+      if (url.origin !== google.origin) throw problem(400, 'Open the configured Google redirect origin to sign in.');
       rate(res, 'google:' + ip, 12);
       const flow = await google.start().catch(() => { throw problem(502, 'Google sign-in is temporarily unavailable.'); });
       const token = randomToken();
@@ -162,7 +172,7 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
         store.revokeFlow(cookie(req, cookieNames.google));
         store.addFlow(token, flow.state, flow.nonce, flow.verifier, Date.now() + minutes(5));
       });
-      setCookie(res, cookieNames.google, token, 300, 'Lax');
+      setCookie(req, res, cookieNames.google, token, 300, 'Lax');
       return json(res, 200, { url: flow.url });
     }
 
@@ -184,7 +194,7 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
         if (store.byEmail(email)) throw problem(409, 'An account with that email already exists.');
         return issue(req, store.createUser(email, 'viewer', hash), 'signup');
       });
-      return json(res, 201, sessionResponse(res, result));
+      return json(res, 201, sessionResponse(req, res, result));
     }
     const bucket = 'account:' + email;
     rate(res, bucket, 5);
@@ -196,7 +206,7 @@ function createAuth({ store, env, json, parse, oidcFetch }) {
       store.clearRate(bucket);
       return issue(req, account, 'password-login');
     });
-    return json(res, 200, sessionResponse(res, result));
+    return json(res, 200, sessionResponse(req, res, result));
   }
 
   return { authenticate, checkCsrf, handle };
