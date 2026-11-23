@@ -1,8 +1,8 @@
-import React, { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDownRight, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { Brand } from './brand';
 import { destinations, phases } from './carousel-state';
-import { allowsVideo, destinationMedia, useMediaVisible } from './destination-media';
+import { destinationMedia, useMediaVisible } from './destination-media';
 import './carousel-world.css';
 
 const Scene = lazy(() => import('./carousel-scene'));
@@ -26,10 +26,11 @@ function PosterRing({ selected, choose }) {
   })}</div>;
 }
 
-export function CarouselWorld({ machine, selected, phase, cinematic, toggleEffects, reduced, logout }) {
+export function CarouselWorld({ machine, selected, phase, cinematic, toggleEffects, reduced, logout, film, onMediaVisibility }) {
   const shell = useRef(null);
   const enter = useRef(null);
   const pointer = useRef(null);
+  const parallax = useRef({ x: 0, y: 0, invalidate: null });
   const visible = useMediaVisible(shell);
   const [failed, setFailed] = useState(() => !('WebGL2RenderingContext' in window));
   const [activated, setActivated] = useState(false);
@@ -73,6 +74,12 @@ export function CarouselWorld({ machine, selected, phase, cinematic, toggleEffec
   }
   function dragMove(event) {
     const drag = pointer.current;
+    if (cinematic && interactive && !drag && event.pointerType === 'mouse') {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      parallax.current.x = (event.clientX - bounds.left) / bounds.width * 2 - 1;
+      parallax.current.y = (event.clientY - bounds.top) / bounds.height * 2 - 1;
+      parallax.current.invalidate?.();
+    }
     if (!interactive || !drag || drag.id !== event.pointerId) return;
     if (!drag.moved && Math.abs(event.clientX - drag.origin) < 7) return;
     if (!drag.moved) event.currentTarget.setPointerCapture(event.pointerId);
@@ -108,15 +115,21 @@ export function CarouselWorld({ machine, selected, phase, cinematic, toggleEffec
   }
 
   const renderWebGL = activated && !failed && cinematic;
+  useEffect(() => {
+    onMediaVisibility(renderWebGL && visible && shown);
+  }, [onMediaVisibility, renderWebGL, visible, shown]);
   const fallback = <PosterRing selected={selected} choose={selectScreen} />;
   return <section className="carousel-world" ref={shell} data-phase={phase} data-destination={destination.id}
     hidden={!shown} inert={!interactive} aria-label="Destination carousel" aria-roledescription="carousel"
     tabIndex={interactive ? 0 : undefined} onKeyDown={onKeyDown}>
-    <div className="carousel-gesture" onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd}>
+    <div className="carousel-gesture" onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd} onPointerLeave={() => {
+      parallax.current.x = 0; parallax.current.y = 0;
+      parallax.current.invalidate?.();
+    }}>
       {renderWebGL ? <RendererBoundary onLoss={onLoss}>
         <Suspense fallback={fallback}>
           <Scene machine={machine} selected={selected} visible={visible && shown} interactive={interactive}
-            effects={cinematic && phase !== phases.rotating} onSelect={selectScreen} onLoss={onLoss} />
+            effects={cinematic} film={film} parallax={parallax} onSelect={selectScreen} onLoss={onLoss} />
         </Suspense>
       </RendererBoundary> : fallback}
     </div>
@@ -149,10 +162,10 @@ export function CarouselWorld({ machine, selected, phase, cinematic, toggleEffec
   </section>;
 }
 
-export function DestinationPage({ destination, phase, machine, cinematic, reduced, toggleEffects, scopeControls, metrics, children }) {
+export function DestinationPage({ destination, phase, machine, cinematic, reduced, toggleEffects, scopeControls, metrics, film, onMediaVisibility, children }) {
   const section = useRef(null);
   const sky = useRef(null);
-  const video = useRef(null);
+  const plate = useRef(null);
   const heading = useRef(null);
   const visible = useMediaVisible(sky);
   const media = destinationMedia(destination.id);
@@ -164,12 +177,23 @@ export function DestinationPage({ destination, phase, machine, cinematic, reduce
     if (active) heading.current?.focus({ preventScroll: true });
   }, [active, destination]);
   useEffect(() => {
-    const film = video.current;
-    if (!film) return;
-    if (active && visible && cinematic && allowsVideo()) void film.play().catch(() => {});
-    else film.pause();
-    return () => film.pause();
-  }, [active, visible, cinematic, destination]);
+    onMediaVisibility(visible);
+    return () => onMediaVisibility(false);
+  }, [onMediaVisibility, visible]);
+
+  useLayoutEffect(() => {
+    if (film?.id !== destination.id) return;
+    const element = film.element;
+    plate.current.append(element);
+    return () => element.remove();
+  }, [film, destination.id]);
+
+  function aim(event) {
+    if (!cinematic || event.pointerType !== 'mouse') return;
+    const bounds = sky.current.getBoundingClientRect();
+    plate.current.style.setProperty('--film-x', ((event.clientX - bounds.left) / bounds.width - .5) * 17 + 'px');
+    plate.current.style.setProperty('--film-y', ((event.clientY - bounds.top) / bounds.height - .5) * 11 + 'px');
+  }
   return <section className={'destination-experience destination-' + destination.style} ref={section} data-phase={phase}
     style={{ '--destination-tone': destination.tone, '--portal-cover': machine.frame.cover }}
     inert={!active} aria-label={destination.title}>
@@ -178,10 +202,13 @@ export function DestinationPage({ destination, phase, machine, cinematic, reduce
       <button className="effects-toggle" type="button" disabled={!!reduced} aria-pressed={cinematic}
         onClick={toggleEffects}>Effects {cinematic ? 'on' : 'off'}</button>
     </header>
-    <div className="destination-hero" ref={sky}>
-      <img className="destination-film" src={media.poster} alt="" />
-      {visible && active && cinematic && allowsVideo() && <video className="destination-film" ref={video}
-        src={media.video} poster={media.poster} preload="none" muted loop playsInline aria-hidden="true" />}
+    <div className="destination-hero" ref={sky} data-film-in-view={visible} onPointerMove={aim} onPointerLeave={() => {
+      plate.current.style.removeProperty('--film-x'); plate.current.style.removeProperty('--film-y');
+    }}>
+      <div className="destination-plate" ref={plate} aria-hidden="true">
+        <img className="destination-film" src={media.poster} alt="" />
+      </div>
+      <div className="destination-film-grain" aria-hidden="true" />
       <div className="destination-shade" aria-hidden="true" />
       <div className="destination-title">
         <p>{destination.subtitle}</p>

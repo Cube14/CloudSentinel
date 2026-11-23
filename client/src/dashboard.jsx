@@ -3,7 +3,8 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { constellationState } from './constellation-state';
 import { useMotionDirector } from './motion-director';
 import { useCarouselDirector } from './carousel-director';
-import { destinationFromPath, phases } from './carousel-state';
+import { destinationFromPath, destinations, phases } from './carousel-state';
+import { useDestinationFilm } from './destination-media';
 import { CarouselWorld, DestinationPage } from './carousel-world';
 import { useReducedMotion } from 'motion/react';
 import { ChevronDown, CircleAlert, Clock3, ScanLine } from 'lucide-react';
@@ -29,6 +30,10 @@ export function Dashboard({ user, api, onLogout }) {
   const director = useMotionDirector(workspace, cinematic);
   const route = destinationFromPath(location.pathname);
   const { machine, page, selected, phase } = useCarouselDirector(route, navigate, cinematic);
+  const [heroVisible, setHeroVisible] = useState(false);
+  const [carouselVisible, setCarouselVisible] = useState(false);
+  const film = useDestinationFilm(page?.id ?? destinations[selected].id, cinematic,
+    Boolean(page && heroVisible) || (carouselVisible && phase !== phases.rotating && phase !== phases.page));
   const [showTopology, setShowTopology] = useState(location.pathname.endsWith('/topology'));
   useEffect(() => {
     if ([phases.idle, phases.exiting, phases.entering].includes(phase)) window.scrollTo(0, 0);
@@ -178,8 +183,8 @@ export function Dashboard({ user, api, onLogout }) {
   </dl>;
   if (!route && location.pathname !== '/workspace' && location.pathname !== '/workspace/') return <Navigate to="/workspace" replace />;
   return <main id="main" ref={workspace} className="workspace workspace-portal" data-effects={cinematic ? 'on' : 'off'}>
-    <CarouselWorld {...{ machine, selected, phase, cinematic, toggleEffects, logout }} reduced={reducedMotion} />
-    {page && <DestinationPage key={page.id} destination={page} {...{ phase, machine, cinematic, toggleEffects, metrics }}
+    <CarouselWorld {...{ machine, selected, phase, cinematic, toggleEffects, logout, film }} onMediaVisibility={setCarouselVisible} reduced={reducedMotion} />
+    {page && <DestinationPage key={page.id} destination={page} {...{ phase, machine, cinematic, toggleEffects, metrics, film }} onMediaVisibility={setHeroVisible}
       scopeControls={controls} reduced={reducedMotion}>
       {sourceNotices}
       {data ? content : <Skeleton disconnected={!!fetchError} />}

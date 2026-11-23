@@ -1,135 +1,270 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>CloudSentinel stage media generator</title>
-<canvas width="512" height="288"></canvas>
+<title>CloudSentinel procedural film studio</title>
+<canvas width="768" height="432"></canvas>
 <script>
 const canvas = document.querySelector('canvas');
-const ctx = canvas.getContext('2d');
-const { width, height } = canvas;
-const TAU = Math.PI * 2;
+const g = canvas.getContext('2d', { alpha: false });
+const {width: W, height: H} = canvas;
+const tau = Math.PI * 2;
+const fract = n => n - Math.floor(n);
+const noise = n => fract(Math.sin(n * 127.1 + 311.7) * 43758.5453);
+const rgba = (rgb, alpha) => 'rgba(' + rgb + ',' + alpha + ')';
+const silver = '186,217,240';
 
-const subjects = {
-  overview: ['vault', '#3b5977', 0],
-  environments: ['signal', '#285c64', 1],
-  findings: ['trace', '#634d68', 2],
-  assets: ['vault', '#28598b', 3],
-  identity: ['signal', '#484a83', 4],
-  threats: ['trace', '#6d523b', 5],
-  analyst: ['signal', '#34696e', 6],
-  audit: ['vault', '#506174', 7],
-};
+function line(x, y, x2, y2) {
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+}
+function path(points, fill, outline) {
+  g.beginPath();
+  points.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+  g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (outline) { g.strokeStyle = outline; g.stroke(); }
+}
+function light(x, y, radius, color, alpha) {
+  const halo = g.createRadialGradient(x, y, 0, x, y, radius);
+  halo.addColorStop(0, rgba(color, alpha)); halo.addColorStop(.34, rgba(color, alpha * .26));
+  halo.addColorStop(1, rgba(color, 0));
+  g.fillStyle = halo; g.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+}
+function wash(x, y, color) {
+  g.fillStyle = '#070c16'; g.fillRect(0, 0, W, H);
+  light(x, y, 510, color, .78);
+}
+function dust(t, color, count = 95) {
+  for (let i = 0; i < count; i++) {
+    const z = noise(i + 244);
+    const x = fract(noise(i) + t * (.12 + z * .23)) * W;
+    const y = (noise(i + 89) + Math.sin(t * tau + i) * .038) * H;
+    g.fillStyle = rgba(color, .025 + z * .27);
+    g.fillRect(x, y, .5 + z * 1.8, .5 + z * 1.35);
+  }
+}
 
+function overview(t) {
+  const cx = 395 + Math.sin(t * tau) * 20, cy = 205 + Math.cos(t * tau) * 8;
+  wash(cx, cy, '53,109,155');
+  for (let i = 0; i < 18; i++) {
+    const end = i * 76 - 230;
+    g.strokeStyle = 'rgba(119,177,227,.19)'; line(cx, cy, end, H);
+  }
+  for (let i = 16; i >= 0; i--) {
+    const depth = i + 1.08 + 1.06 * fract(t * 1.1);
+    const p = 1 / depth, x = 560 * p, y = 300 * p;
+    for (const side of [-1, 1]) {
+      const face = cx + side * x * .74;
+      const outer = cx + side * x * 1.18;
+      const top = cy - y, floor = cy + y * .87;
+      path([[face,top],[outer,top-y*.14],[outer,floor+y*.15],[face,floor]], i % 2 ? '#101e2e' : '#17283a', '#759bb377');
+      const edge = cx + side * x * .66;
+      path([[face,top],[edge,top+y*.17],[edge,floor-y*.12],[face,floor]], '#091420', '#82abc466');
+      for(let s = 0; s < 12; s++) {
+        const m = top + (s + 1) * (floor - top) / 13;
+        g.strokeStyle = 'rgba(119,157,188,.34)'; line(face + side * x*.025, m, outer - side * x*.04, m);
+        g.fillStyle = rgba(silver, .19 + .57 * noise(i * 19 + s + Math.floor(t * 13)));
+        g.fillRect(outer - side * x*.099, m + p * 4, Math.max(1, 3*p), Math.max(.7, 3*p));
+      }
+    }
+    const top = cy - y;
+    g.strokeStyle = rgba(silver, Math.min(.72, p * .73)); g.lineWidth = 1 + p * 2;
+    line(cx - x * .69, top + y * .05, cx + x * .69, top + y * .05);
+    g.lineWidth = 1;
+  }
+  light(cx, cy - 6, 102, '140,207,251', .37);
+  dust(t, silver, 70);
+}
+
+function environments(t) {
+  wash(385, 145, '64,105,143');
+  for (let i = 0; i < 29; i++) {
+    const x = 100 + noise(i * 3) * 620 + Math.sin(t * tau + i * .3) * 14;
+    const y = 130 + noise(i * 3 + 1) * 260;
+    light(x, y, 55 + noise(i + 39) * 142, i % 4 === 0 ? '118,156,179' : '61,103,132', .15 + noise(i + 17)*.2);
+  }
+  g.save(); g.translate(407, 260); g.transform(1, -.12, .6, .52, 0, 0);
+  for (let ring = 1; ring <= 5; ring++) {
+    g.strokeStyle = rgba(silver, .12 + ring * .035);
+    g.beginPath(); g.ellipse(0, 0, ring * 57, ring * 41, .4, 0, tau); g.stroke();
+  }
+  for (let i = 0; i < 19; i++) {
+    const x = (noise(i + 92) - .5) * 400, y = (noise(i + 140) - .5) * 290;
+    const size = 17 + 34 * noise(i + 34), height = 18 + 72 * noise(i + 98);
+    path([[x-size,y],[x,y-size*.5],[x+size,y],[x,y+size*.5]], '#193650', '#8dc5e292');
+    path([[x-size,y],[x,y+size*.5],[x,y+size*.5-height],[x-size,y-height]], '#152a3c', '#5887a591');
+    path([[x-size,y-height],[x,y-height-size*.5],[x+size,y-height],[x,y-height+size*.5]], '#385472', '#a1c5ddaa');
+    light(x, y-height, 21, '111,183,230', .33 + Math.sin(t * tau + i) * .08);
+  }
+  g.restore();
+  dust(t, silver, 110);
+}
+
+function findings(t) {
+  wash(414, 206, '50,72,137');
+  g.save(); g.translate(421, 215); g.rotate(-.13);
+  for (let i = 0; i < 102; i++) {
+    const y = i * 4.1 - 210;
+    const phase = fract(t + noise(i + 82));
+    const extent = 255 * Math.sqrt(Math.max(0, 1 - (y/218)**2));
+    const cut = Math.sin(t*tau + i*.19) * 43 * (phase > .8 ? 1 : .16);
+    g.strokeStyle = rgba(i % 7 === 0 ? '105,145,233' : silver, .06 + .55 * noise(i + 482));
+    line(-extent+cut,y,extent+cut,y);
+    for (let j = 0; j < 4; j++) {
+      const x = (noise(i*5+j)-.5) * extent * 2;
+      g.fillStyle = rgba(silver, .04 + .54 * noise(i+j*128));
+      g.fillRect(x + cut * .7, y - .8, 2 + noise(i + j) * 29, 1.2 + (j % 2));
+    }
+  }
+  g.restore();
+  g.strokeStyle = '#b1d0f443'; line(125,310,667,104);
+  light(429, 224, 150, '123,155,227', .16); dust(t, silver, 85);
+}
+
+function assets(t) {
+  wash(402, 215, '48,93,136');
+  g.save(); g.translate(393, 229 + Math.sin(t*tau)*6); g.rotate(-.47);
+  g.transform(1,0,.24,.69,0,0);
+  g.fillStyle = '#101e29'; g.fillRect(-480,-340,960,680);
+  for(let i = 0; i < 72; i++) {
+    const side=i%2 ? 1 : -1, y = (i % 36 - 18) * 14;
+    const jog = side * (114 + noise(i + 82) * 143);
+    const target = y + (noise(i+53)-.5)*125;
+    g.strokeStyle = rgba(i % 7 === 0 ? silver : '110,157,183', .2 + noise(i+7)*.36);
+    g.beginPath(); g.moveTo(side*92,y);g.lineTo(jog,y);g.lineTo(jog+side*27,target);
+    g.lineTo(side*486,target);g.stroke();
+    const q=fract(t+noise(i));
+    g.fillStyle=rgba(silver,.22 + q*.55); g.fillRect(jog + (side*469-jog)*q,target-1,2.8,2);
+  }
+  path([[-108,-97],[111,-97],[111,107],[-108,107]],'#090f17','#92b6cf');
+  path([[-91,-80],[94,-80],[94,89],[-91,89]],'#1e374c','#acd2e4');
+  path([[-77,-66],[80,-66],[80,75],[-77,75]],'#304d68','#729bb8');
+  for(let i=0;i<24;i++){g.strokeStyle=i%3?'#9ab3c76b':'#c7e0f5ad';line(-65,-52+i*4.8,66,-52+i*4.8);}
+  const sheen=-62+fract(t+.12)*130;
+  light(sheen, 3, 99, '153,205,235', .63);
+  g.restore();
+  dust(t,silver,60);
+}
+
+function identity(t) {
+  wash(417, 204, '76,92,145');
+  g.save(); g.translate(408,213);
+  for (let i = 0; i < 7; i++) {
+    const r = 48 + i * 19, angle = t*tau*(i%2 ? -1 : 1) + i*.73;
+    g.rotate(i*.032);
+    g.strokeStyle = rgba(silver, .27 + i*.05);
+    g.lineWidth = i%3===0 ? 2.7 : 1;
+    g.beginPath(); g.ellipse(0,0,r*1.45,r*.75,angle*.08,angle,angle+Math.PI*1.56); g.stroke();
+    for (let j = 0; j < 16; j++) {
+      const a = j/16*tau+angle;
+      const x = Math.cos(a)*r*1.44, y = Math.sin(a)*r*.75;
+      g.fillStyle = rgba(silver,.24 + .50*noise(i*2+j));
+      g.fillRect(x-1,y,2.4,2.4);
+    }
+  }
+  const flare = Math.sin(t*tau) * .3 + .64;
+  path([[0,-65],[58,-5],[0,64],[-58,-5]],'#13283e','#a2b8d4');
+  path([[0,-65],[58,-5],[0,22],[-58,-5]],'#49627f','#b1ccea');
+  light(0, 0, 69, silver, flare*.48);
+  g.restore(); dust(t, silver, 78);
+}
+
+function threats(t) {
+  wash(391,214,'45,88,129');
+  for (let j = 0; j < 17; j++) {
+    const base = 80 + j*16;
+    g.lineWidth = j%6===0 ? 2.2 : .7;
+    g.strokeStyle = rgba(j%4===0?'116,154,220':silver,.12+noise(j+21)*.51);
+    g.beginPath();
+    for(let x=0;x<=W;x+=6) {
+      const carrier = Math.sin(x*.029 + t*tau*(j%2 ? 1 : -1) + j*.34);
+      const interference = Math.sin(x*.010 + t*tau + j*1.3);
+      const envelope = Math.exp(-(((x - 390 - Math.sin(t*tau)*135)/153)**2));
+      const y = base + carrier * (5 + interference * 33 * envelope) + Math.sin(x*.062+j)*8*envelope;
+      x===0?g.moveTo(x,y):g.lineTo(x,y);
+    }
+    g.stroke();
+  }
+  g.lineWidth=1;
+  for(let i=0;i<12;i++){
+    const x=fract(i*.618+t*.16)*W;
+    g.strokeStyle=rgba(silver,.11+noise(i)*.13);line(x,71,x+18,355);
+  }
+  light(425 + Math.sin(t*tau)*125,228,128,'102,168,230',.25);dust(t,silver,80);
+}
+
+function analyst(t) {
+  wash(383,215,'44,100,131');
+  for (let i = 0; i < 51; i++) {
+    const y = 217 + (noise(i + 84)-.5)*358, band = i * .111;
+    g.strokeStyle = rgba(i%3===0 ? '109,173,218' : silver, .09 + noise(i+8)*.24);
+    g.beginPath(); g.moveTo(-20,y+61);
+    g.bezierCurveTo(174,y-180,518,220+Math.sin(band+t*tau)*49,810,y+7);
+    g.stroke();
+    for(let j=0;j<4;j++){
+      const f = fract(noise(i+j*95)+t*(j%2===0?.32:.55));
+      const r = 1-f;
+      const x=r**3*-20+3*r*r*f*174+3*r*f*f*518+f**3*810;
+      const yy=r**3*(y+61)+3*r*r*f*(y-180)+3*r*f*f*(220+Math.sin(band+t*tau)*49)+f**3*(y+7);
+      g.fillStyle=rgba(silver,.2+noise(i+j+117)*.64);g.fillRect(x,yy,1+noise(j+i)*2.4,1.3);
+      if(j===0&&i%5===0)light(x,yy,23,'88,175,233',.26);
+    }
+  }
+  dust(t, silver, 82);
+}
+
+function audit(t) {
+  wash(386,235,'66,89,121');
+  g.save(); g.translate(392,217);g.rotate(-.18);
+  for(let i=0;i<18;i++){
+    const y= (i-9)*21;
+    g.strokeStyle = rgba(silver, i%4===0 ? .39 : .17); line(-510,y,495,y);
+    for(let j=0;j<22;j++){
+      const x = -453 + j * 43 + (i%2)*16;
+      const intensity = .11 + noise(i*11+j)*.56;
+      g.fillStyle=rgba(silver,intensity);g.fillRect(x,y-2,i%3===0?19:3,3);
+      if (noise(i * 22 + j)> .7) g.fillRect(x+6,y-7,11,2);
+    }
+  }
+  const head = -420 + fract(t + .2) * 870;
+  light(head,0,180,'101,159,227',.37);g.strokeStyle='#b8d7ea98';line(head,-220,head,215);
+  g.restore();
+  dust(t,silver,70);
+}
+
+const artwork = { overview, environments, findings, assets, identity, threats, analyst, audit };
 function frame(subject, t) {
-  const [style, tint, motif] = subjects[subject] || [subject, '#345587', 0];
-  const horizon = height * .48;
-  const vanishing = width * (.5 + Math.sin(t * TAU + motif * .64) * .11);
-  const base = ctx.createRadialGradient(vanishing, horizon, 0, vanishing, horizon, width * .63);
-  base.addColorStop(0, tint);
-  base.addColorStop(1, '#050811');
-  ctx.fillStyle = base; ctx.fillRect(0, 0, width, height);
-
-  for (let i = 15; i >= 0; i--) {
-    const distance = i + 1 + (1 - t) * 4;
-    const scale = 1.28 / distance;
-    const edge = width * .83 * scale;
-    const top = horizon - 154 * scale;
-    const bottom = horizon + 120 * scale;
-    ctx.strokeStyle = 'rgba(139,190,242,' + (.79 - i * .038) + ')';
-    ctx.lineWidth = Math.max(.45, 3.4 * scale);
-    if (style === 'vault') {
-      const inset = edge * .24;
-      ctx.fillStyle = i % 2 === 0 ? '#121f36' : '#1b2b45';
-      ctx.fillRect(vanishing - edge, top, inset, bottom - top);
-      ctx.fillRect(vanishing + edge - inset, top, inset, bottom - top);
-      ctx.strokeRect(vanishing - edge, top, edge * 2, bottom - top);
-      for (let row = 1; row < 7; row++) {
-        const y = top + (bottom - top) * row / 7;
-        line(vanishing - edge, y, vanishing - edge + inset * .75, y);
-        line(vanishing + edge - inset * .75, y, vanishing + edge, y);
-      }
-    } else {
-      const sides = style === 'trace' ? 6 : 8;
-      ctx.beginPath();
-      for (let n = 0; n <= sides; n++) {
-        const a = n / sides * TAU + t * TAU * (style === 'trace' ? 1 : -1);
-        const x = vanishing + Math.cos(a) * edge;
-        const y = horizon + Math.sin(a) * edge * .5;
-        n === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-  }
-
-  for (let i = 0; i < 58; i++) {
-    const phase = (i * .619 + t * (style === 'trace' ? -1 : 1) + 1) % 1;
-    const x = vanishing + Math.cos(i * 8.2) * width * phase ** 2;
-    const y = horizon + Math.sin(i * 19.3) * height * phase ** 2;
-    ctx.fillStyle = 'rgba(170,213,255,' + (.095 + phase * .35) + ')';
-    ctx.fillRect(x, y, 1 + phase * 1.35, 1 + phase * .8);
-  }
-  if (style === 'vault') {
-    ctx.strokeStyle = '#82b9f175';
-    ctx.lineWidth = 1;
-    for (const edge of [-1, 1]) {
-      line(vanishing, horizon, width * (.5 + edge * .49), height * .88);
-      line(vanishing, horizon, width * (.5 + edge * .49), height * .085);
-    }
-  }
-  ctx.save();
-  ctx.translate(vanishing, horizon);
-  ctx.strokeStyle = '#b3d9ef55';
-  ctx.lineWidth = .7;
-  if (motif % 2) {
-    for(let i = 0; i < 11; i++) {
-      const a = i / 11 * TAU + t * TAU;
-      const p = 42 + 6 * motif;
-      line(Math.cos(a) * p, Math.sin(a) * p * .48, Math.cos(a) * p * 1.7, Math.sin(a) * p * .65);
-    }
-  } else {
-    for(let i = 0; i < 5 + motif; i++) {
-      const y = (i - 3) * 13;
-      const offset = Math.sin(i * .9 + t * TAU) * 38;
-      line(-118 + offset, y, -78 + offset * .4, y);
-      line(78 - offset * .4, -y, 118 - offset, -y);
-    }
-  }
-  ctx.restore();
-  const beam = ctx.createLinearGradient(0, horizon - 28, 0, horizon + 28);
-  beam.addColorStop(0, '#83b2ff00'); beam.addColorStop(.5, '#83b2ff23'); beam.addColorStop(1, '#83b2ff00');
-  ctx.fillStyle = beam; ctx.fillRect(0, horizon - 28, width, 56);
+  g.lineWidth = 1;
+  artwork[subject](t);
+  const vignette = g.createRadialGradient(W*.48,H*.47,H*.19,W*.48,H*.47,W*.61);
+  vignette.addColorStop(0,'#02050b00');vignette.addColorStop(1,'#02050bc9');
+  g.fillStyle=vignette;g.fillRect(0,0,W,H);
 }
 
-function line(x, y, endX, endY) {
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(endX, endY); ctx.stroke();
-}
-
-window.recordTransmission = async (style) => {
-  frame(style, .18);
-  const poster = canvas.toDataURL('image/webp', .84);
-  const stream = canvas.captureStream(24);
-  const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 250000 });
-  const chunks = [];
-  const completed = new Promise(resolve => { recorder.onstop = resolve; });
-  recorder.ondataavailable = event => chunks.push(event.data);
+window.recordTransmission = async subject => {
+  frame(subject,.31);
+  const poster=canvas.toDataURL('image/webp',.87);
+  const stream=canvas.captureStream(24);
+  const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8',videoBitsPerSecond:460000});
+  const chunks=[];
+  recorder.ondataavailable=e=>chunks.push(e.data);
+  const complete=new Promise(resolve=>{recorder.onstop=resolve});
   recorder.start();
-  const start = performance.now();
-  await new Promise(resolve => {
-    const draw = now => {
-      const progress = (now - start) / 4400;
-      if (progress >= 1) { resolve(); return; }
-      frame(style, progress);
-      requestAnimationFrame(draw);
-    };
-    requestAnimationFrame(draw);
+  const start=performance.now();
+  await new Promise(resolve=>{
+    function render(now){
+      const progress=(now-start)/5000;
+      if(progress>=1){resolve();return;}
+      frame(subject,progress);requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
   });
-  recorder.stop();
-  await completed;
-  stream.getTracks().forEach(track => track.stop());
-  const video = await new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.readAsDataURL(new Blob(chunks, { type: 'video/webm' }));
+  recorder.stop();await complete;
+  stream.getTracks().forEach(track=>track.stop());
+  const video=await new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));
   });
-  return { poster, video };
+  return {poster,video};
 };
 </script>

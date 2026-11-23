@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { BackSide, SRGBColorSpace, TextureLoader, VideoTexture } from 'three';
+import { BackSide, SRGBColorSpace, TextureLoader, Vector2, VideoTexture } from 'three';
 import { destinations } from './carousel-state';
-import { allowsVideo, destinationMedia } from './destination-media';
+import { destinationMedia } from './destination-media';
 
 const cameraSettings = { fov: 42, near: .08, far: 80 };
 const radius = 8.5;
@@ -11,11 +11,41 @@ const aspect = 1.96;
 const arc = interval * .90;
 const panelHeight = radius * arc / aspect;
 
-function Screen({ index, selected, interactive, onSelect, front }) {
-  const { poster, video } = destinationMedia(destinations[index].id);
+const gradedMap = `
+#ifdef USE_MAP
+  vec2 imageUv = vec2(1. - vMapUv.x, vMapUv.y);
+  vec2 center = imageUv - .5;
+  float radius = dot(center, center);
+  imageUv += filmPointer * .012 * filmStrength;
+  imageUv += center * radius * .014 * filmStrength;
+  vec4 sampledDiffuseColor = texture2D(map, clamp(imageUv, .002, .998));
+  #ifdef DECODE_VIDEO_TEXTURE
+    sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
+  #endif
+  float grain = fract(sin(dot(floor(vMapUv * vec2(758.,432.)),vec2(12.9898,78.233))
+    + floor(filmTime * 24.)*.137) * 43758.5453) - .5;
+  float wash = exp(-10. * abs(vMapUv.x * .94 + vMapUv.y * .19 - (.54 + sin(filmTime * .65) * .18)));
+  sampledDiffuseColor.rgb = max(vec3(0.), sampledDiffuseColor.rgb * (1. - radius * .17 + grain * .105 * filmStrength)
+    + filmStrength * vec3(.010,.017,.027) * wash);
+  diffuseColor *= sampledDiffuseColor;
+#endif
+`;
+
+function Screen({ index, selected, interactive, onSelect, film, grade }) {
+  const { poster } = destinationMedia(destinations[index].id);
   const [still, setStill] = useState(null);
   const [moving, setMoving] = useState(null);
   const invalidate = useThree(state => state.invalidate);
+  const strength = useMemo(() => ({ value: 0 }), []);
+  const configure = useMemo(() => shader => {
+    shader.uniforms.filmPointer = grade.pointer;
+    shader.uniforms.filmTime = grade.time;
+    shader.uniforms.filmStrength = strength;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_pars_fragment>',
+      '#include <map_pars_fragment>\nuniform vec2 filmPointer;\nuniform float filmTime;\nuniform float filmStrength;')
+      .replace('#include <map_fragment>', gradedMap);
+  }, [grade, strength]);
+  strength.value = selected ? 1 : 0;
   const angle = Math.PI - index * interval - arc / 2;
   useEffect(() => {
     if (!poster) return;
@@ -30,44 +60,17 @@ function Screen({ index, selected, interactive, onSelect, front }) {
   }, [poster, invalidate]);
 
   useEffect(() => {
-    if (!front || !video || !allowsVideo()) return;
-    const film = document.createElement('video');
-    film.src = video;
-    film.muted = true;
-    film.playsInline = true;
-    film.loop = true;
-    const texture = new VideoTexture(film);
+    if (!film) return;
+    const texture = new VideoTexture(film.element);
     texture.colorSpace = SRGBColorSpace;
-    let active = true;
-    let request;
-    let presented = false;
-    function draw() {
-      if (!active) return;
-      if (!presented && film.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        presented = true;
-        texture.needsUpdate = true;
-        setMoving(texture);
-      }
-      invalidate();
-      if (film.requestVideoFrameCallback) request = film.requestVideoFrameCallback(draw);
-    }
-    film.play().then(() => {
-      if (!active) return;
-      if (film.requestVideoFrameCallback) request = film.requestVideoFrameCallback(draw);
-      else draw();
-    }).catch(() => {});
-    return () => {
-      active = false;
-      if (request !== undefined) film.cancelVideoFrameCallback(request);
-      film.pause();
-      film.removeAttribute('src');
-      film.load();
-      texture.dispose();
-      setMoving(null);
-    };
-  }, [front, video, invalidate]);
+    texture.needsUpdate = true;
+    setMoving({ film, texture });
+    invalidate();
+    return () => texture.dispose();
+  }, [film, invalidate]);
 
-  const lens = (front && moving) || still;
+  const playing = film && moving?.film === film;
+  const lens = playing ? moving.texture : still;
   const handlers = interactive ? { onClick: event => {
     event.stopPropagation();
     if (event.delta < 6) onSelect(index);
@@ -75,8 +78,9 @@ function Screen({ index, selected, interactive, onSelect, front }) {
   return <>
     <mesh position={[0, .1, 0]} {...handlers}>
       <cylinderGeometry args={[radius, radius, panelHeight, 28, 1, true, angle, arc]} />
-      <meshBasicMaterial side={BackSide} map={lens} key={lens === moving && moving ? 'video' : lens ? 'poster' : 'empty'}
-        color={lens ? selected ? '#edf5ff' : '#8297b7' : '#142035'} toneMapped={false} />
+      <meshBasicMaterial side={BackSide} map={lens} key={playing ? 'video' : lens ? 'poster' : 'empty'}
+        onBeforeCompile={configure}
+        color={lens ? selected ? '#f0f6ff' : '#91a4bf' : '#142035'} toneMapped={false} />
     </mesh>
     <mesh position={[0, -panelHeight - .03, 0]} scale={[1, -1, 1]}>
       <cylinderGeometry args={[radius + .02, radius + .02, panelHeight * .83, 16, 1, true, angle, arc]} />
@@ -89,9 +93,17 @@ function Screen({ index, selected, interactive, onSelect, front }) {
   </>;
 }
 
-function Ring({ machine, selected, visible, interactive, effects, onSelect, onLoss }) {
+function Ring({ machine, selected, visible, interactive, effects, onSelect, onLoss, film, parallax }) {
   const group = useRef(null);
   const { camera, invalidate, gl, size } = useThree();
+  const grade = useMemo(() => ({ pointer: { value: new Vector2() }, time: { value: 0 } }), []);
+  useEffect(() => {
+    parallax.current.invalidate = visible ? invalidate : null;
+    return () => { parallax.current.invalidate = null; };
+  }, [parallax, visible, invalidate]);
+  useEffect(() => {
+    if (visible && film) return film.subscribe(invalidate);
+  }, [film, visible, invalidate]);
   useEffect(() => machine.subscribe(() => { if (visible) invalidate(); }), [machine, visible, invalidate]);
   useEffect(() => {
     const canvas = gl.domElement;
@@ -101,6 +113,13 @@ function Ring({ machine, selected, visible, interactive, effects, onSelect, onLo
   useFrame(() => {
     if (!size.width || !size.height || !group.current) return;
     const { offset, travel, accent } = machine.frame;
+    const x = interactive ? parallax.current.x : 0;
+    const y = interactive ? parallax.current.y : 0;
+    const look = grade.pointer.value;
+    look.x += (x - look.x) * .17;
+    look.y += (y - look.y) * .17;
+    grade.time.value = film?.element.currentTime ?? 0;
+    if (Math.abs(x - look.x) + Math.abs(y - look.y) > .007) invalidate();
     const narrow = size.width / size.height < .85;
     group.current.rotation.y = offset * interval;
     const base = narrow ? 3.1 : 1.25;
@@ -123,7 +142,8 @@ function Ring({ machine, selected, visible, interactive, effects, onSelect, onLo
     <fogExp2 attach="fog" args={['#060912', .028]} />
     <group ref={group}>
       {destinations.map((destination, index) => <Screen key={destination.id} index={index} selected={index === selected}
-        front={visible && effects && index === selected} {...{ interactive, onSelect }} />)}
+        film={visible && effects && index === selected && film?.id === destination.id ? film : null}
+        {...{ interactive, onSelect, grade }} />)}
     </group>
     <points>
       <bufferGeometry><bufferAttribute attach="attributes-position" args={[dust, 3]} /></bufferGeometry>

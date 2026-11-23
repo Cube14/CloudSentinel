@@ -50,8 +50,23 @@
 .destination-hero{position:relative;min-height:100svh;display:grid;align-content:center;overflow:hidden;isolation:isolate;
   background:#080d18;padding:100px clamp(18px,8vw,146px) 115px}
 .destination-film,.destination-shade{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;z-index:-1}
-.destination-film{filter:saturate(.73) contrast(1.1)}
-.destination-shade{z-index:0;background:linear-gradient(90deg,#060a12dd,#060a1261 53%,#060a1244),
+.destination-plate{position:absolute;inset:-2.5%;z-index:-1;pointer-events:none;
+  scale:calc(1 + (1 - var(--portal-cover,1)) * .25);
+  transform:translate3d(var(--film-x,0px),var(--film-y,0px),0);transition:transform .44s cubic-bezier(.19,1,.22,1)}
+.destination-film{z-index:0;filter:saturate(.90) contrast(1.05) brightness(1.06)}
+.destination-live-film{z-index:1}
+.destination-film-grain{position:absolute;inset:-6%;z-index:0;opacity:.135;pointer-events:none;
+  background:url('./media/film-grain.svg?no-inline') repeat;mix-blend-mode:soft-light}
+.workspace-portal[data-effects=on] .destination-hero[data-film-in-view=true] .destination-film-grain{
+  animation:film-grain .72s steps(1,end) infinite}
+.workspace-portal[data-effects=off] .destination-plate{transform:none;transition:none}
+@keyframes film-grain{
+  22%{transform:translate3d(-2%,1%,0)}
+  49%{transform:translate3d(1%,-2%,0)}
+  72%{transform:translate3d(-1%,2%,0)}
+}
+
+.destination-shade{z-index:0;opacity:calc(.69 + .31 * var(--portal-cover,1));background:linear-gradient(90deg,#060a12dd,#060a1261 53%,#060a1244),
   linear-gradient(180deg,#05080f80,transparent 40%,#080d19ec)}
 .destination-title{position:relative;z-index:1;max-width:100%;justify-self:start}
 .destination-title h1{font:570 clamp(3.3rem,12vw,13rem)/.83 var(--display);letter-spacing:-.09em;max-width:100%;overflow-wrap:anywhere;
@@ -104,7 +119,7 @@
  .analyst-first .incident-evidence{grid-column:1;grid-row:2}
 }
 @media(max-height:520px){.carousel-console{gap:4px;bottom:8px}.carousel-editorial{top:18svh}.carousel-editorial h1{font-size:clamp(2rem,14svh,5.3rem)}}
-@media(prefers-reduced-motion:reduce){.workspace-portal :is(.carousel-editorial h1,.destination-title h1){animation:none}}
+@media(prefers-reduced-motion:reduce){.workspace-portal :is(.carousel-editorial h1,.destination-title h1,.destination-film-grain){animation:none}}
 
 .destination-source-map{display:flex;flex-wrap:wrap;gap:6px;max-width:100%;padding-top:11px;border-top:1px solid #7487a36e}
 .destination-source-map button{min-width:0;display:grid;grid-template-columns:8px minmax(0,1fr);align-items:center;gap:2px 7px;
