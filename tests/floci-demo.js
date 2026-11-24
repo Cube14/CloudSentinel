@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
@@ -105,3 +105,4 @@ main().catch(error => {
   console.error(error.name + ': ' + error.message);
   process.exitCode = 1;
 });
+
