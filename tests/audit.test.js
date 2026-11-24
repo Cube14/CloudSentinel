@@ -52,12 +52,19 @@ test('audit survives login rollback and restart, supports pagination, metrics, s
 
   browser = await boot();
   await login(browser);
+  assert.equal((await browser.request('/api/auth/google/callback')).status, 404);
   const path = '/api/auth/audit/events';
   const response = await browser.request(path + '?kind=auth&page=1&limit=2');
   assert.equal(response.status, 200);
   const first = await response.json();
   assert.deepEqual([first.metrics.attempts, first.metrics.successes, first.metrics.failures], [10, 3, 7]);
   assert.equal(first.metrics.failedByDay.at(-1).count, 7);
+  assert.equal(first.metrics.blocked, 1);
+  assert.equal(first.metrics.oauth, 0);
+  assert.equal((await (await browser.request(path + '?action=google-unavailable')).json()).total, 1);
+  assert.equal((await browser.request(path + '?from=2026-02-30')).status, 400);
+  assert.equal((await browser.request(path + '?from=2099-01-01&before=2099-02-01')).status, 200);
+  assert.equal((await (await browser.request(path + '?from=2099-01-01&format=csv')).text()).trim().split('\r\n').length, 1);
   assert.ok(first.metrics.lastLogin);
   const second = await (await browser.request(path + '?kind=auth&page=2&limit=2')).json();
   assert.equal(first.total, second.total);

@@ -169,3 +169,15 @@ test('the local CLI provisions an administrator and rejects an existing email', 
     assert.ok(activity.some(entry => entry.action === 'admin-provisioned' && entry.actor === adminEmail));
   } finally { await new Promise(resolve => app.close(resolve)); }
 });
+
+test('controlled deployment rejects new password registrations', async t => {
+  const { app } = createApp({ env: { AUTH_SIGNUP_ENABLED: '0' }, dbPath: ':memory:' });
+  const base = await listen(app);
+  t.after(() => new Promise(resolve => app.close(resolve)));
+  const browser = client(base);
+  assert.equal((await browser.request('/api/auth/session')).status, 200);
+  const signup = await browser.request('/api/auth/signup', { method: 'POST',
+    body: { email: 'disabled@example.test', password } });
+  assert.equal(signup.status, 403);
+  assert.match((await signup.json()).error, /registration is disabled/);
+});

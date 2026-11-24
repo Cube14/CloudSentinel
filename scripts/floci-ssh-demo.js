@@ -2,9 +2,10 @@
 
 const { randomUUID } = require('node:crypto');
 const { createInterface } = require('node:readline/promises');
-const { EC2Client, CreateSecurityGroupCommand, AuthorizeSecurityGroupIngressCommand, DeleteSecurityGroupCommand } =
+const { EC2Client, CreateSecurityGroupCommand, AuthorizeSecurityGroupIngressCommand, RevokeSecurityGroupIngressCommand,
+  DeleteSecurityGroupCommand } =
   require('@aws-sdk/client-ec2');
-const { scan } = require('../security-engine/engine');
+const { createScanner } = require('../server/scans');
 const { flociSource } = require('../server/floci');
 const { endpoint, verifyEmulator } = require('../server/floci-lab');
 
@@ -21,14 +22,24 @@ async function demonstrateSSH(configuredEndpoint) {
     }));
     groupId = group.GroupId;
     if (!/^sg-[a-z0-9-]+$/.test(groupId || '')) throw new Error('Floci returned an invalid security-group ID.');
-    await send(new AuthorizeSecurityGroupIngressCommand({ GroupId: groupId,
-      IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] }));
+    const permission = { IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] };
+    const ingress = { GroupId: groupId, IpPermissions: [permission] };
+    await send(new AuthorizeSecurityGroupIngressCommand(ingress));
     const source = flociSource(endpoint);
-    const inventory = (await source.collect()).map(asset => ({ ...asset,
-      provider: source.provider, environment: source.id, source: source.kind }));
-    const finding = scan(inventory).findings.find(finding => finding.ruleId === 'CSPM-004' && finding.resourceId === groupId);
-    if (!finding) throw new Error('Floci scan did not observe the expected SSH finding.');
-    return finding;
+    const scanner = createScanner([source]);
+    const [environment] = scanner.selected(source.id);
+    await scanner.run(source.id);
+    if (environment.status !== 'succeeded') throw new Error('The initial Floci scan did not complete.');
+    const finding = environment.result.findings.find(entry => entry.ruleId === 'CSPM-004' && entry.resourceId === groupId);
+    if (!finding || finding.severity !== 'CRITICAL') throw new Error('Floci scan did not observe the critical SSH finding.');
+    await send(new RevokeSecurityGroupIngressCommand(ingress));
+    await scanner.run(source.id);
+    const observed = environment.inventory.find(asset => asset.id === groupId);
+    const resolution = environment.resolved.find(entry => entry.id === finding.id);
+    if (environment.status !== 'succeeded' || !observed || !resolution) {
+      throw new Error('A complete independent Floci scan did not verify resolution on the existing group.');
+    }
+    return { finding, resolution };
   } finally {
     try {
       if (/^sg-[a-z0-9-]+$/.test(groupId || '')) {
@@ -46,10 +57,10 @@ async function main() {
   }
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const confirm = await readline.question('Type DEMO SSH to create, scan and remove a detached local Floci security group: ');
+    const confirm = await readline.question('Type DEMO SSH to create, scan, remediate and remove a detached local Floci security group: ');
     if (confirm !== 'DEMO SSH') throw new Error('Confirmation did not match.');
   } finally { readline.close(); }
-  console.log(JSON.stringify({ finding: await demonstrateSSH(process.env.FLOCI_ENDPOINT),
+  console.log(JSON.stringify({ ...await demonstrateSSH(process.env.FLOCI_ENDPOINT),
     cleanup: 'Temporary detached group removed' }, null, 2));
 }
 

@@ -38,6 +38,7 @@ function openLab(store, configuredEndpoint, { probe = fetch, storage } = {}) {
       return await sdk.send(new Command(input), { abortSignal: AbortSignal.timeout(5000) });
     } catch (error) {
       if (absent && [absent, absent + 'Exception'].includes(error.name)) return null;
+      if (error.name === 'NoSuchBucket') throw problem(404, 'This bucket is no longer present in Floci.');
       if (unsupported(error)) throw problem(501, Command.name.replace(/Command$/, '') + ' is unsupported by this Floci emulator.');
       throw problem(502, Command.name.replace(/Command$/, '') + ' failed at the Floci endpoint.');
     }

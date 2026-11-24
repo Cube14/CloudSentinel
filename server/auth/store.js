@@ -59,7 +59,9 @@ function openStore(filename) {
     count(*) FILTER (WHERE ${action} = 'password-login-attempted' OR (${action} = 'password-login' AND json_extract(payload, '$.operationId') IS NULL)) AS attempts,
     count(*) FILTER (WHERE ${action} = 'password-login' AND ${status} = 'success') AS successes,
     count(*) FILTER (WHERE ${action} = 'password-login' AND ${status} = 'failure') AS failures,
-    count(*) FILTER (WHERE ${action} LIKE 'google-%') AS oauth,
+    count(*) FILTER (WHERE ${action} = 'rate-limit-triggered' AND json_extract(payload, '$.details.operation') = 'password-login') AS blocked,
+    count(*) FILTER (WHERE ${action} IN ('google-started', 'google-login') AND
+      COALESCE(json_extract(payload, '$.details.code'), 0) <> 404) AS oauth,
     max(timestamp) FILTER (WHERE ${action} IN ('password-login', 'google-login') AND ${status} = 'success') AS lastLogin
     FROM audit WHERE kind = 'auth'`);
   const failedByDay = db.prepare(`WITH RECURSIVE days(day) AS (
@@ -88,6 +90,17 @@ function openStore(filename) {
       const value = params.get(key)?.trim().slice(0, 128);
       if (value) { clauses.push(column + ' = ?'); values.push(value); }
     }
+    const dates = ['from', 'before'].map(key => params.get(key));
+    for (const [index, date] of dates.entries()) {
+      if (date === null) continue;
+      const parsed = new Date(date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime()) ||
+          parsed.toISOString().slice(0, 10) !== date || (dates[0] && dates[1] && dates[0] >= dates[1])) {
+        throw Object.assign(new Error('Use an ordered UTC date range in YYYY-MM-DD format.'), { status: 400 });
+      }
+      clauses.push(index === 0 ? 'timestamp >= ?' : 'timestamp < ?');
+      values.push(date);
+    }
     const search = params.get('q')?.trim().toLowerCase().slice(0, 254);
     if (search) {
       clauses.push(`(instr(lower(id || ' ' || ${action} || ' ' || coalesce(json_extract(payload, '$.actor'), json_extract(payload, '$.approvedBy'), '') ||
@@ -100,6 +113,9 @@ function openStore(filename) {
     const pageSize = Math.max(1, Math.min(100, Number.parseInt(params.get('limit'), 10) || 25));
     const page = Math.max(1, Math.min(10000000, Number.parseInt(params.get('page'), 10) || 1));
     const total = db.prepare('SELECT count(*) AS total FROM audit' + where).get(...values).total;
+    if (exportAll && total > 10000) {
+      throw Object.assign(new Error('Narrow the audit date range or filters to export at most 10,000 events.'), { status: 413 });
+    }
     const rows = db.prepare('SELECT kind, payload FROM audit' + where + ' ORDER BY timestamp DESC, rowid DESC' +
       (exportAll ? '' : ' LIMIT ? OFFSET ?')).all(...values, ...(exportAll ? [] : [pageSize, (page - 1) * pageSize]));
     const entries = rows.map(row => {

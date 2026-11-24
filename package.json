@@ -14,6 +14,7 @@
     "test": "node --test",
     "benchmark": "node tests/benchmark.js",
     "test:floci": "node tests/floci-smoke.js",
+    "demo:preflight": "node --env-file-if-exists=.env scripts/demo-preflight.js",
     "lab:ssh": "node --env-file-if-exists=.env scripts/floci-ssh-demo.js",
     "lab:s3": "node --env-file-if-exists=.env scripts/floci-s3-lab.js",
     "demo:floci": "node tests/floci-demo.js"

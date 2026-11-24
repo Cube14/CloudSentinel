@@ -14,7 +14,11 @@
 .audit-days meter { width: 100%; }
 .audit-event { display: grid; gap: .75rem; margin: 0; }
 .audit-evidence { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.lab-form { display: grid; justify-items: start; gap: 1rem; }
+.lab-form { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 1rem; }
+.lab-form > *, .audit-fields label { min-width: 0; max-width: 100%; }
+.lab-description code { overflow-wrap: anywhere; }
+.lab-form select[aria-label="Bucket"] { width: 100%; }
+.lab-form > label:first-child { width: min(100%, 34rem); }
 .lab-form .lab-options { padding: 0; }
 .lab-evidence { align-items: start; }
 .lab-evidence > div { flex: 1 1 15rem; min-width: 0; }

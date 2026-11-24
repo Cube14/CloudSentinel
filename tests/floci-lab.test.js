@@ -172,6 +172,14 @@ test('real API workflow persists finding history and distinguishes terminal chan
     assert.ok((await labScan()).findings.some(finding => finding.id === open.id));
     await terminal.mutate({ bucket: name, confirm: name, template: 'secure' }, { channel: 'terminal' });
     assert.ok((await labScan()).resolved.some(finding => finding.id === open.id));
+    const settings = { bucket: name, confirm: name, template: 'secure' };
+    const competing = await Promise.allSettled([
+      terminal.mutate(settings, { channel: 'terminal' }),
+      terminal.mutate(settings, { channel: 'terminal' }),
+    ]);
+    assert.equal(competing.filter(entry => entry.status === 'fulfilled').length, 1);
+    assert.equal(competing.find(entry => entry.status === 'rejected').reason.status, 409);
+    assert.equal((await terminal.inspect(name)).policy.value, null);
   } finally {
     terminal.close();
     terminalStore.close();
@@ -193,7 +201,9 @@ test('real API workflow persists finding history and distinguishes terminal chan
 });
 
 test('Floci SDK detects critical SSH on a temporary detached security group', { skip: !live }, async () => {
-  const finding = await demonstrateSSH(endpoint);
+  const { finding, resolution } = await demonstrateSSH(endpoint);
   assert.equal(finding.ruleId, 'CSPM-004');
   assert.equal(finding.severity, 'CRITICAL');
+  assert.equal(resolution.id, finding.id);
+  assert.equal(resolution.status, 'RESOLVED');
 });

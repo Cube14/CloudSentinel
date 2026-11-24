@@ -1,5 +1,11 @@
 # Implementation status
 
+## Professor demo v2
+
+The preflight checks the local runtime, frontend build, fixed Floci 2.5.0 S3 endpoint, database access and admin, registered bucket names, active ports, proxy configuration, and optional Ollama. The Lab shows stable finding IDs, suppresses duplicate UI submissions and retains open findings through failed and partial scans. The SSH command now revokes the exact rule and verifies resolution in a complete independent scan before removing its detached group.
+
+The security audit distinguishes password outcomes and rate-limited attempts, supports UTC date ranges and bounds CSV exports. The EC2 runbook includes a deployment checklist, closed registration mode and shutdown verification. Browser testing used an isolated Floci container and SQLite file. AWS account discovery used mocked SDK responses. EC2 provisioning, live AWS credentials, real OAuth and second-device HTTPS await an approved deployment or device. See the [demo guide](professor-demo-v2.md).
+
 ## Opt-in LAN HTTPS
 
 Caddy terminates HTTPS on a selected private interface and forwards sanitized requests to loopback Node. An ephemeral proxy token authenticates forwarding metadata. LAN cookies are Secure and separate from direct localhost sessions. Local Google OIDC remains available as configured, while LAN OAuth requires its own explicitly registered HTTPS DNS callback.

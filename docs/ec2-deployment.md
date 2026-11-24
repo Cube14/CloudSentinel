@@ -17,6 +17,7 @@ Create the unprivileged `cloudsentinel` system account. Mount encrypted persiste
 PORT=3153
 AUTH_DB_PATH=/var/lib/cloudsentinel/cloudsentinel.sqlite
 AUTH_SESSION_TTL_SECONDS=28800
+AUTH_SIGNUP_ENABLED=0
 SCAN_INTERVAL_MS=60000
 LAN_PROXY=1
 LAN_HTTPS_ORIGIN=https://sentinel.example.org
@@ -53,3 +54,14 @@ Attach a dedicated least-privilege instance profile and require IMDSv2. Omit the
 - Run one Node service per database. Monitor disk, audit growth, failed or partial scans, and backup age. Scheduled scans append lifecycle records. Agree a retention and archival policy before long-running production use. The dashboard displays account identifiers, client IP metadata, and audit evidence to administrators.
 - Model EC2 hours, EBS capacity, snapshots, DNS, public IPv4, outbound traffic and optional logging and backup fees. Use the actual region and expected runtime in the AWS calculator. Enable a budget alert before provisioning. [EC2 On-Demand Pricing](https://aws.amazon.com/ec2/pricing/on-demand/) · [AWS Pricing Calculator](https://calculator.aws/)
 - Before approved exposure, review audience and signup policy, restrict access at the network boundary if open registration is unsuitable, verify role and CSRF behavior, test certificate renewal and restore, and validate that the Floci port is unreachable remotely. The prepared profile is for a single evaluation host and has not been exercised on EC2.
+
+## Deployment verification checklist
+
+- Prepare an immutable release directory with a tagged commit, lockfile build, test results, and `npm audit --omit=dev` report. Save the last built release and service/Caddy configuration for rollback. Review reported vulnerabilities and track upgrades separately.
+- Check that the service user is unprivileged, secrets are root-controlled, and the SQLite/WAL directory and backup location are encrypted and writable by the intended account. Run one process per database. Disable new registrations with `AUTH_SIGNUP_ENABLED=0`; provision the admin explicitly and pre-enroll approved viewers in the restricted environment before disabling registration when needed.
+- Match the canonical DNS hostname, Caddy certificate and Node origin. Run `caddy validate --config /etc/caddy/Caddyfile` with the real service environment. Verify certificate renewal, a network-restricted audience, proxy header sanitization, Secure cookies, signup policy, admin/viewer behavior, and client inability to reach TCP 3153, 4566 and 11434 directly.
+- Check protected dashboard source status as well as `/api/health`. The health endpoint measures application liveness. Alert on repeated failed or partial collection, database growth, backup age and a certificate approaching expiry. Cap journal usage with the host's journald retention policy.
+- Verify `systemctl stop cloudsentinel` drains current HTTP work within the unit timeout. Restart, check the same persisted lifecycle, then restore an encrypted SQLite backup to a separate test instance or path and validate before touching the primary. Roll back code and service configuration to the prior build. If database compatibility was broken, restore its paired backup through an approved recovery procedure.
+- Archive security audit data in bounded date ranges through admin CSV and encrypted SQLite backups. Agree a retention period with the operator. The live audit table is append-only; this profile has no automatic deletion or archival job.
+- In Mode A, confirm the S3 Lab refuses unregistered resources and Floci is loopback-only. In Mode B, disable the lab, verify role credentials via STS, check approved account and regions, and compare LIVE counts against authorized AWS inventory. Keep scheduled live collection off until this is verified.
+- Estimate costs with instance hourly rate × hours, provisioned storage, snapshots, public IPv4 hours, DNS and transfer. Use the selected AWS region and runtime in the calculator before provisioning, set a budget alert, and record the estimate and approval. Sizing above is a starting hypothesis for one host.

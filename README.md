@@ -70,7 +70,7 @@ npm start
 
 `test:floci` reads inventory. On a fresh emulator, a default security group and zero findings are expected. Run `demo:floci` against a dedicated disposable emulator. It creates uniquely named empty S3 buckets, security groups and IAM users and checks the collector against six safe and insecure configurations. Each invocation adds resources to that emulator. Select **AWS Floci emulator** in the console. The application scanner uses only dummy credentials and read APIs. [Floci installation](https://floci.io/floci/getting-started/installation/)
 
-The [professor demo guide](docs/professor-demo.md) covers the website and terminal S3 Lab, verified before and after evidence, and the security audit. The [EC2 deployment guide](docs/ec2-deployment.md) includes a separate Ubuntu profile.
+The [professor demo guide](docs/professor-demo-v2.md) covers `npm run demo:preflight`, the website and terminal S3 Lab, verified before and after evidence, and the security audit. The [EC2 deployment guide](docs/ec2-deployment.md) includes a separate Ubuntu profile.
 
 ## Demo walkthrough
 

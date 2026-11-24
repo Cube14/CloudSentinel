@@ -13,6 +13,7 @@ EnvironmentFile=/etc/cloudsentinel/cloudsentinel.env
 ExecStart=/usr/bin/node /opt/cloudsentinel/server/server.js
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=45s
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

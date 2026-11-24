@@ -324,6 +324,19 @@ if (require.main === module) {
         : 'CloudSentinel could not start: ' + error.message);
       process.exitCode = 1;
     });
+    let closing = false;
+    function shutdown() {
+      if (closing) return;
+      closing = true;
+      app.close(error => {
+        if (error) {
+          console.error('CloudSentinel could not close its HTTP listener:', error.message);
+          process.exitCode = 1;
+        }
+      });
+    }
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
     app.listen(port, '127.0.0.1', () => {
       console.log('CloudSentinel http://127.0.0.1:' + app.address().port);
     });

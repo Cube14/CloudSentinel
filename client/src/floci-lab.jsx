@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Database, ShieldCheck } from 'lucide-react';
 import { Empty, Panel, Pill, time } from './workspace-ui';
@@ -36,6 +36,7 @@ export function FlociLab({ api, onScan }) {
   const [custom, setCustom] = useState(blank);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
+  const active = useRef(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,7 +50,11 @@ export function FlociLab({ api, onScan }) {
     const controller = new AbortController();
     if (selected) api(route + '?bucket=' + encodeURIComponent(selected), undefined, controller.signal)
       .then(setInspection).catch(error => {
-        if (!controller.signal.aborted) { setInspection(null); setError(error.message); }
+        if (!controller.signal.aborted) {
+          setInspection(null);
+          if (error.status === 404) select('');
+          setError(error.message);
+        }
       });
     api('/api/dashboard?environment=aws-floci', undefined, controller.signal).then(data => {
       setFindings([...data.findings, ...data.resolved]);
@@ -66,6 +71,8 @@ export function FlociLab({ api, onScan }) {
 
   async function apply(event) {
     event.preventDefault();
+    if (active.current) return;
+    active.current = true;
     setBusy(true);
     setError('');
     setOperation(null);
@@ -77,20 +84,22 @@ export function FlociLab({ api, onScan }) {
       setOperation(result);
       setConfirm('');
     } catch (error) { setError(error.message); }
-    finally { setBusy(false); setVersion(value => value + 1); }
+    finally { active.current = false; setBusy(false); setVersion(value => value + 1); }
   }
 
   async function scan() {
+    if (active.current) return;
+    active.current = true;
     setBusy(true);
     setError('');
     setScanStatus('Scanning…');
     try {
       const result = await api(route + '/scan', {});
       setFindings([...result.findings, ...result.resolved]);
-      setScanStatus(result.status === 'succeeded' ? 'Complete scan' : result.status);
+      setScanStatus(result.status === 'succeeded' ? 'Complete scan' : 'Partial scan. Previously open findings were preserved.');
       onScan();
     } catch (error) { setError(error.message); setScanStatus('Scan failed'); }
-    finally { setBusy(false); setVersion(value => value + 1); }
+    finally { active.current = false; setBusy(false); setVersion(value => value + 1); }
   }
 
   const existing = inspection?.name === selected ? inspection : null;
@@ -150,6 +159,7 @@ export function FlociLab({ api, onScan }) {
       {scanStatus && <p className="lab-description" role="status">{scanStatus}</p>}
       {visibleFindings.length ? visibleFindings.map(finding => <section className="lab-description" key={finding.id}>
         <h3>{finding.ruleId} · {finding.title} <Pill value={finding.status} /></h3>
+        <p>{finding.severity} · <code>{finding.id}</code></p>
         <p>{finding.evidence}</p>
         {finding.resolutionEvidence && <p>{finding.resolutionEvidence} · {time(finding.resolvedAt)}</p>}
         <p>{finding.recommendation}</p>

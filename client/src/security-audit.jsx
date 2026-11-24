@@ -46,8 +46,8 @@ export function SecurityAudit({ api }) {
     onClick={() => { setThrough(null); setPage(1); setRefresh(value => value + 1); }}>Refresh</button>}>
     {metrics && <div className="audit-overview">
       <dl className="audit-metrics">
-        {[['Password attempts', metrics.attempts], ['Successful logins', metrics.successes],
-          ['Failed logins', metrics.failures], ['OAuth events', metrics.oauth], ['Last sign-in', time(metrics.lastLogin)]]
+        {[['Password attempts', metrics.attempts], ['Successful password logins', metrics.successes],
+          ['Unsuccessful password attempts', metrics.failures], ['Rate-limited password attempts', metrics.blocked], ['OAuth events', metrics.oauth], ['Last sign-in', time(metrics.lastLogin)]]
           .map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
       </dl>
       <details><summary>Failed password attempts by UTC day · last 14 days</summary>
@@ -62,8 +62,8 @@ export function SecurityAudit({ api }) {
         <select value={filters[key]} onChange={event => filter(key, event.target.value)}>
           <option value="">All</option>{options.map(option => <option key={option}>{option}</option>)}
         </select></label>)}
-      {[['action', 'Event type'], ['environment', 'Source ID'], ['operation', 'Operation ID']].map(([key, label]) =>
-        <label key={key}>{label}<input value={filters[key]} onChange={event => filter(key, event.target.value)} /></label>)}
+      {[['action', 'Event type'], ['environment', 'Source ID'], ['operation', 'Operation ID'], ['from', 'From UTC date'], ['before', 'Before UTC date']].map(([key, label]) =>
+        <label key={key}>{label}<input type={key === 'from' || key === 'before' ? 'date' : 'text'} value={filters[key] || ''} onChange={event => filter(key, event.target.value)} /></label>)}
     </div>
     {error && <p className="feedback error inset" role="alert">{error}</p>}
     {result ? <>

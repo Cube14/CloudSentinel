@@ -45,6 +45,9 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
     GOOGLE_REDIRECT_URI: env.LAN_GOOGLE_REDIRECT_URI,
   }, oidcFetch, lanOrigin) : null;
   const googleFor = req => req.lanProxy ? lanGoogle : localGoogle;
+  if (env.AUTH_SIGNUP_ENABLED !== undefined && !['0', '1'].includes(env.AUTH_SIGNUP_ENABLED)) {
+    throw new Error('AUTH_SIGNUP_ENABLED must be 0 or 1.');
+  }
   const sessionSeconds = Number(env.AUTH_SESSION_TTL_SECONDS || 28800);
   if (!Number.isInteger(sessionSeconds) || sessionSeconds < 60 || sessionSeconds > 604800) {
     throw new Error('AUTH_SESSION_TTL_SECONDS must be an integer from 60 to 604800');
@@ -128,7 +131,7 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
     const login = pathname === '/api/auth/login';
     const googleStart = pathname === '/api/auth/google/start';
     const googleFinish = req.method === 'GET' && pathname === callbackPath;
-    const operation = googleStart || googleFinish ? 'google-login' : signup ? 'signup' : login ? 'password-login' : null;
+    const operation = googleStart || googleFinish ? (google ? 'google-login' : 'google-unavailable') : signup ? 'signup' : login ? 'password-login' : null;
     let operationId = randomUUID();
     let accountKey;
     const flowId = token => 'oidc-' + digest('audit-flow:' + token).slice(0, 32);
@@ -167,6 +170,7 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
           const result = store.transaction(() => {
             let account = store.byGoogle(sub);
             if (!account) {
+              if (env.AUTH_SIGNUP_ENABLED === '0') throw new Error('Account registration is disabled.');
               if (store.byEmail(email)) throw new Error('Email already associated with another sign-in method');
               account = store.createUser(email, 'viewer', null, sub);
             }
@@ -216,6 +220,7 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
       }
 
       if (!signup && !login) throw problem(404, 'Not found');
+      if (signup && env.AUTH_SIGNUP_ENABLED === '0') throw problem(403, 'Account registration is disabled.');
       rate(res, (signup ? 'signup:' : 'login:') + ip, signup ? 8 : 25);
       if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) {
         throw problem(415, 'Send credentials as JSON.');
