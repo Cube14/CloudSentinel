@@ -91,9 +91,10 @@ test('LAN signup, login, reload and logout use scoped Secure cookies, CSRF and e
   assert.equal((await request('/api/auth/signup', { ...post, token: '' })).status, 403);
   assert.equal((await request('/api/auth/signup', { ...post, headers: { Origin: 'https://other.test' } })).status, 403);
   const signup = await request('/api/auth/signup', post);
-  assert.equal(signup.status, 201);
-  assert.equal((await signup.json()).user.role, 'viewer');
-  assert.match(signup.headers.getSetCookie()[0], /^__Host-cs_session=.*HttpOnly; SameSite=Strict;.*Secure$/);
+  assert.equal(signup.status, 202);
+  const signedIn = await request('/api/auth/login', post);
+  assert.equal((await signedIn.json()).user.role, 'viewer');
+  assert.match(signedIn.headers.getSetCookie()[0], /^__Host-cs_session=.*HttpOnly; SameSite=Strict;.*Secure$/);
   assert.equal((await request('/api/auth/audit')).status, 403);
   assert.equal((await request('/api/scans/run', { method: 'POST', body: {} })).status, 403);
   assert.equal((await request('/workspace/findings')).status, 200);

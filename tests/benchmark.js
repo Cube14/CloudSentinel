@@ -60,7 +60,11 @@ async function scheduledLatency() {
     const signup = await browser.request('/api/auth/signup', {
       method: 'POST', body: { email: 'benchmark@example.test', password }
     });
-    if (signup.status !== 201) throw new Error('Benchmark viewer signup failed: ' + signup.status);
+    if (signup.status !== 202) throw new Error('Benchmark viewer signup failed: ' + signup.status);
+    const signedIn = await browser.request('/api/auth/login', {
+      method: 'POST', body: { email: 'benchmark@example.test', password }
+    });
+    if (signedIn.status !== 200) throw new Error('Benchmark viewer sign-in failed: ' + signedIn.status);
     async function findings() {
       const response = await browser.request('/api/findings');
       if (!response.ok) throw new Error('Benchmark API failed: ' + response.status);

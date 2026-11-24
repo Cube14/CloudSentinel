@@ -2,6 +2,8 @@
 
 const { randomBytes, randomUUID, timingSafeEqual } = require('node:crypto');
 const { normalizeEmail, acceptablePassword, hashPassword, verifyPassword } = require('./password');
+const { client, record, csv } = require('../audit');
+const { digest } = require('./store');
 const { callbackPath, createGoogle } = require('./google');
 
 const cookieNames = { session: 'cs_session', csrf: 'cs_csrf', google: 'cs_google' };
@@ -32,7 +34,7 @@ function problem(status, message) {
 }
 
 function recordAccount(store, action, user) {
-  store.addAudit('auth', { id: randomUUID(), action, actor: user?.email || null, timestamp: new Date().toISOString() });
+  record(store, 'auth', action, 'success', { actor: user?.email, channel: 'terminal' });
 }
 
 function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
@@ -70,13 +72,12 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
     return { csrf, user: publicUser(user), googleEnabled: Boolean(googleFor(req)) };
   }
 
-  function issue(req, user, action) {
+  function issue(req, user) {
     const token = randomToken();
     const csrf = randomToken();
     store.revokeSession(cookie(req, cookieNames.session));
     store.revokeFlow(cookie(req, cookieNames.google));
     store.addSession(token, user.id, csrf, Date.now() + sessionSeconds * 1000);
-    recordAccount(store, action, user);
     return { token, csrf, user };
   }
 
@@ -113,100 +114,150 @@ function createAuth({ store, env, json, parse, oidcFetch, lanOrigin }) {
       if (user.role !== 'admin') throw problem(403, 'Administrator access required.');
       return json(res, 200, store.activity());
     }
-    if (req.method === 'GET' && pathname === callbackPath) {
-      if (!google) throw problem(404, 'Google sign-in is unavailable.');
-      const flowToken = cookie(req, cookieNames.google);
-      const state = url.searchParams.get('state');
-      if (url.origin !== google.origin || !flowToken || !tokenPattern.test(state || '')) {
-        return redirect(res, '/login?oauth=failed');
-      }
-      const flow = store.takeFlow(flowToken, state);
-      if (!flow) return redirect(res, '/login?oauth=failed');
-      setCookie(req, res, cookieNames.google, '', 0, 'Lax');
-      try {
-        const claims = await google.finish(url, flow);
-        const email = normalizeEmail(claims?.email);
-        const sub = claims?.sub;
-        if (!email || claims.email_verified !== true || typeof sub !== 'string' || !sub || sub.length > 255) {
-          throw new Error('Google did not return a verified identity');
-        }
-        const result = store.transaction(() => {
-          let account = store.byGoogle(sub);
-          if (!account) {
-            if (store.byEmail(email)) throw new Error('Email already associated with another sign-in method');
-            account = store.createUser(email, 'viewer', null, sub);
-          }
-          return issue(req, account, 'google-login');
-        });
-        sessionResponse(req, res, result);
-      } catch {
-        return redirect(res, '/login?oauth=failed');
-      }
-      return redirect(res, '/workspace');
-    }
-    if (req.method !== 'POST') throw problem(404, 'Not found');
-    checkCsrf(req, user);
-
-    if (pathname === '/api/auth/logout') {
+    if (req.method === 'GET' && pathname === '/api/auth/audit/events') {
       if (!user) throw problem(401, 'Sign in required.');
-      store.transaction(() => {
-        store.revokeSession(cookie(req, cookieNames.session));
-        store.revokeFlow(cookie(req, cookieNames.google));
-        recordAccount(store, 'logout', user);
-      });
-      setCookie(req, res, cookieNames.session, '', 0);
-      setCookie(req, res, cookieNames.google, '', 0, 'Lax');
-      const csrf = randomToken();
-      setCookie(req, res, cookieNames.csrf, csrf, 3600);
-      return json(res, 200, { csrf, user: null, googleEnabled: Boolean(googleFor(req)) });
+      if (user.role !== 'admin') throw problem(403, 'Administrator access required.');
+      const exporting = url.searchParams.get('format') === 'csv';
+      const events = store.events(url.searchParams, exporting);
+      if (!exporting) return json(res, 200, { ...events, metrics: store.metrics() });
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Cache-Control': 'no-store',
+        'Content-Disposition': 'attachment; filename="cloudsentinel-audit.csv"' });
+      return res.end(csv(events.entries));
     }
-
-    if (pathname === '/api/auth/google/start') {
-      if (!google) throw problem(404, 'Google sign-in is unavailable.');
-      if (user) throw problem(409, 'Sign out before continuing with Google.');
-      if (url.origin !== google.origin) throw problem(400, 'Open the configured Google redirect origin to sign in.');
-      rate(res, 'google:' + ip, 12);
-      const flow = await google.start().catch(() => { throw problem(502, 'Google sign-in is temporarily unavailable.'); });
-      const token = randomToken();
-      store.transaction(() => {
-        store.revokeFlow(cookie(req, cookieNames.google));
-        store.addFlow(token, flow.state, flow.nonce, flow.verifier, Date.now() + minutes(5));
-      });
-      setCookie(req, res, cookieNames.google, token, 300, 'Lax');
-      return json(res, 200, { url: flow.url });
-    }
-
     const signup = pathname === '/api/auth/signup';
-    if (!signup && pathname !== '/api/auth/login') throw problem(404, 'Not found');
-    rate(res, (signup ? 'signup:' : 'login:') + ip, signup ? 8 : 25);
-    if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) {
-      throw problem(415, 'Send credentials as JSON.');
-    }
-    const body = await parse(req, 4096);
-    const email = normalizeEmail(body.email);
-    const password = body.password;
-    if (!email || !acceptablePassword(password)) {
-      throw problem(signup ? 400 : 401, signup ? 'Enter a valid email and a password of at least 15 characters.' : 'Invalid email or password.');
-    }
-    if (signup) {
-      const hash = await hashPassword(password);
-      const result = store.transaction(() => {
-        if (store.byEmail(email)) throw problem(409, 'An account with that email already exists.');
-        return issue(req, store.createUser(email, 'viewer', hash), 'signup');
-      });
-      return json(res, 201, sessionResponse(req, res, result));
-    }
-    const bucket = 'account:' + email;
-    rate(res, bucket, 5);
-    const account = store.byEmail(email);
-    if (!await verifyPassword(password, account?.password)) {
-      throw problem(401, 'Invalid email or password.');
-    }
-    const result = store.transaction(() => {
-      store.clearRate(bucket);
-      return issue(req, account, 'password-login');
+    const login = pathname === '/api/auth/login';
+    const googleStart = pathname === '/api/auth/google/start';
+    const googleFinish = req.method === 'GET' && pathname === callbackPath;
+    const operation = googleStart || googleFinish ? 'google-login' : signup ? 'signup' : login ? 'password-login' : null;
+    let operationId = randomUUID();
+    let accountKey;
+    const flowId = token => 'oidc-' + digest('audit-flow:' + token).slice(0, 32);
+    const audit = (action, outcome, account, details) => record(store, 'auth', action, outcome, {
+      ...client(req, account || user), operationId, accountKey, details
     });
-    return json(res, 200, sessionResponse(req, res, result));
+    let attempted = false;
+    const attempt = () => {
+      if (!login || req.method !== 'POST' || attempted) return;
+      audit('password-login-attempted', 'attempted');
+      attempted = true;
+    };
+    try {
+      if (googleFinish) {
+        if (!google) throw problem(404, 'Google sign-in is unavailable.');
+        const flowToken = cookie(req, cookieNames.google);
+        if (flowToken) operationId = flowId(flowToken);
+        const state = url.searchParams.get('state');
+        if (url.origin !== google.origin || !flowToken || !tokenPattern.test(state || '')) {
+          audit(operation, 'failure', null, { reason: 'Invalid OAuth flow' });
+          return redirect(res, '/login?oauth=failed');
+        }
+        const flow = store.takeFlow(flowToken, state);
+        if (!flow) {
+          audit(operation, 'failure', null, { reason: 'Invalid OAuth flow' });
+          return redirect(res, '/login?oauth=failed');
+        }
+        setCookie(req, res, cookieNames.google, '', 0, 'Lax');
+        try {
+          const claims = await google.finish(url, flow);
+          const email = normalizeEmail(claims?.email);
+          const sub = claims?.sub;
+          if (!email || claims.email_verified !== true || typeof sub !== 'string' || !sub || sub.length > 255) {
+            throw new Error('Google did not return a verified identity');
+          }
+          const result = store.transaction(() => {
+            let account = store.byGoogle(sub);
+            if (!account) {
+              if (store.byEmail(email)) throw new Error('Email already associated with another sign-in method');
+              account = store.createUser(email, 'viewer', null, sub);
+            }
+            const session = issue(req, account);
+            audit(operation, 'success', account);
+            return session;
+          });
+          sessionResponse(req, res, result);
+        } catch {
+          audit(operation, 'failure', null, { reason: 'OAuth exchange or sign-in failed' });
+          return redirect(res, '/login?oauth=failed');
+        }
+        return redirect(res, '/workspace');
+      }
+      if (req.method !== 'POST') throw problem(404, 'Not found');
+      checkCsrf(req, user);
+
+      if (pathname === '/api/auth/logout') {
+        if (!user) throw problem(401, 'Sign in required.');
+        store.transaction(() => {
+          store.revokeSession(cookie(req, cookieNames.session));
+          store.revokeFlow(cookie(req, cookieNames.google));
+          audit('logout', 'success', user);
+        });
+        setCookie(req, res, cookieNames.session, '', 0);
+        setCookie(req, res, cookieNames.google, '', 0, 'Lax');
+        const csrf = randomToken();
+        setCookie(req, res, cookieNames.csrf, csrf, 3600);
+        return json(res, 200, { csrf, user: null, googleEnabled: Boolean(googleFor(req)) });
+      }
+
+      if (googleStart) {
+        if (!google) throw problem(404, 'Google sign-in is unavailable.');
+        if (user) throw problem(409, 'Sign out before continuing with Google.');
+        if (url.origin !== google.origin) throw problem(400, 'Open the configured Google redirect origin to sign in.');
+        rate(res, 'google:' + ip, 12);
+        const flow = await google.start().catch(() => { throw problem(502, 'Google sign-in is temporarily unavailable.'); });
+        const token = randomToken();
+        operationId = flowId(token);
+        store.transaction(() => {
+          store.revokeFlow(cookie(req, cookieNames.google));
+          store.addFlow(token, flow.state, flow.nonce, flow.verifier, Date.now() + minutes(5));
+          audit('google-started', 'started');
+        });
+        setCookie(req, res, cookieNames.google, token, 300, 'Lax');
+        return json(res, 200, { url: flow.url });
+      }
+
+      if (!signup && !login) throw problem(404, 'Not found');
+      rate(res, (signup ? 'signup:' : 'login:') + ip, signup ? 8 : 25);
+      if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) {
+        throw problem(415, 'Send credentials as JSON.');
+      }
+      const body = await parse(req, 4096);
+      const email = normalizeEmail(body.email);
+      if (email) accountKey = digest('audit-account:' + email);
+      attempt();
+      const password = body.password;
+      if (!email || !acceptablePassword(password)) {
+        throw problem(signup ? 400 : 401, signup ? 'Enter a valid email and a password of at least 15 characters.' : 'Invalid email or password.');
+      }
+      if (signup) {
+        const hash = await hashPassword(password);
+        store.transaction(() => {
+          if (store.byEmail(email)) audit(operation, 'failure', null, { reason: 'Registration unavailable' });
+          else audit(operation, 'success', store.createUser(email, 'viewer', hash));
+        });
+        return json(res, 202, { message: 'You can now continue to sign in.' });
+      }
+      const bucket = 'account:' + email;
+      rate(res, bucket, 5);
+      const account = store.byEmail(email);
+      if (!await verifyPassword(password, account?.password)) {
+        throw problem(401, 'Invalid email or password.');
+      }
+      const result = store.transaction(() => {
+        store.clearRate(bucket);
+        const session = issue(req, account);
+        audit(operation, 'success', account);
+        return session;
+      });
+      return json(res, 200, sessionResponse(req, res, result));
+    } catch (error) {
+      attempt();
+      if (operation && (req.method === 'POST' || googleFinish)) {
+        const code = error.status || (error instanceof SyntaxError ? 400 : 500);
+        if (code === 429) audit('rate-limit-triggered', 'blocked', null, { operation });
+        audit(operation, 'failure', null, { code });
+      }
+      throw error;
+    }
   }
 
   return { authenticate, checkCsrf, handle };

@@ -1,0 +1,25 @@
+[Unit]
+Description=CloudSentinel
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/var/lib/cloudsentinel
+
+[Service]
+Type=simple
+User=cloudsentinel
+Group=cloudsentinel
+WorkingDirectory=/opt/cloudsentinel
+EnvironmentFile=/etc/cloudsentinel/cloudsentinel.env
+ExecStart=/usr/bin/node /opt/cloudsentinel/server/server.js
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+StateDirectory=cloudsentinel
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

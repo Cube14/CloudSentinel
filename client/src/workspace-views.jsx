@@ -1,4 +1,5 @@
-import React, { useDeferredValue, useEffect, useState } from 'react';
+import { SecurityAudit } from './security-audit';
+import React, { useDeferredValue, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { RevealAccent } from './reveal-accent';
@@ -182,6 +183,7 @@ export function RecordDetails({ record, data, close }) {
           <Pill value={lifecycle(finding)} />
         </motion.span>
       </div>
+      {finding.resolutionEvidence && <p>{finding.resolutionEvidence}</p>}
       {finding.stale && <p>Last known finding. The latest partial scan could not verify it.</p>}
       <Definition entries={ [['Resource', finding.resource], ['Resource ID', finding.resourceId],
         ['Source', sourceName(data, finding.environment)], ['Source type', sourceTypes[finding.source]],
@@ -219,23 +221,10 @@ export function RecordDetails({ record, data, close }) {
 }
 
 export function Audit({ data, admin, api }) {
-  const [security, setSecurity] = useState(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!admin) return;
-    const controller = new AbortController();
-    api('/api/auth/audit', undefined, controller.signal).then(setSecurity).catch(error => {
-      if (!controller.signal.aborted) setError(error.message);
-    });
-    return () => controller.abort();
-  }, [api, admin]);
   return <>
     <Panel title="Simulated responses" icon={ListChecks}><Table headers={['Time', 'Environment', 'Decision', 'Action', 'Analyst', 'Result']}
       rows={data.audit.map(a => ({ key: a.id, cells: [time(a.timestamp), sourceName(data, a.sourceEnvironment),
         a.decision, a.action, a.approvedBy, a.status] }))} /></Panel>
-    {admin && <Panel title="Account activity" icon={Fingerprint}>{error ? <p className="feedback error inset">{error}</p>
-      : security ? <Table headers={['Time', 'Event', 'Account']} rows={security.map(entry => ({
-        key: entry.id, cells: [time(entry.timestamp), entry.action, entry.actor]
-      }))} /> : <p className="panel-empty" role="status">Loading account activity…</p>}</Panel>}
+    {admin && <SecurityAudit api={api} />}
   </>;
 }

@@ -15,7 +15,7 @@ npm start
 
 Open [the local console](http://127.0.0.1:3153/). The three fixture environments work offline after the dependency install and build. Floci and Ollama are optional.
 
-Sign up in the UI for a **viewer** account. To enable manual scans, incident investigations, fixture replay, and simulated responses, provision a separate **admin** account in PowerShell:
+Sign up in the UI and then sign in for **viewer** access. To enable manual scans, incident investigations, fixture replay, and simulated responses, provision a separate **admin** account in PowerShell:
 
 ```powershell
 npm run setup:admin -- admin@example.com
@@ -28,6 +28,7 @@ Copy `.env.example` to an ignored `.env` to save settings locally. The server an
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Local HTTP port |
+| `FLOCI_LAB_ENABLED` | `0` | Enables the admin-only S3 Lab with verified Floci 2.5.0 at `http://127.0.0.1:4566` |
 | `SCAN_INTERVAL_MS` | `15000` | Scheduled scan interval, minimum 1000 ms |
 | `FLOCI_ENDPOINT` | Unset | Enable the additional AWS emulator source with an HTTP loopback URL |
 | `CLOUD_SOURCES_FILE` | Unset | Load named local definitions for AWS live, Floci, Azure, and GCP sources |
@@ -69,6 +70,8 @@ npm start
 
 `test:floci` reads inventory. On a fresh emulator, a default security group and zero findings are expected. Run `demo:floci` against a dedicated disposable emulator. It creates uniquely named empty S3 buckets, security groups and IAM users and checks the collector against six safe and insecure configurations. Each invocation adds resources to that emulator. Select **AWS Floci emulator** in the console. The application scanner uses only dummy credentials and read APIs. [Floci installation](https://floci.io/floci/getting-started/installation/)
 
+The [professor demo guide](docs/professor-demo.md) covers the website and terminal S3 Lab, verified before and after evidence, and the security audit. The [EC2 deployment guide](docs/ec2-deployment.md) includes a separate Ubuntu profile.
+
 ## Demo walkthrough
 
 1. Sign in as an admin, select each fixture environment, and compare its inventory and findings.
@@ -98,6 +101,9 @@ Read routes accept an optional `?environment=aws-lab`, `azure-lab`, `gcp-lab`, o
 | GET | `/api/scans/latest` | Latest scan results by source |
 | POST | `/api/scans/run` | Scan the selected scope. Returns 503 with per-source details if a scan fails |
 | GET | `/api/events`, `/api/incidents`, `/api/audit` | Fixture and manually submitted event evidence, incidents, and simulated responses |
+| GET | `/api/auth/audit/events` | Admin-only security timeline, SQL metrics, filters, pagination and CSV export |
+| GET/POST | `/api/lab/s3` | Admin-only Floci listing/inspection and confirmed disposable-bucket changes |
+| POST | `/api/lab/s3/scan` | Admin-only complete Floci scan with finding lifecycle results |
 | GET | `/api/ollama/status` | Signed-in probe for the configured local model. Reports ready, model-missing, or offline |
 | POST | `/api/events`, `/api/simulations/run` | Add a lab event or reset event history to the fixture scenario |
 | POST | `/api/incidents/:id/investigate`, `/api/incidents/:id/respond` | Optional investigation or simulated response audit entry |

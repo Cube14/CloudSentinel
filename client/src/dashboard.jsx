@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { constellationState } from './constellation-state';
 import { useMotionDirector } from './motion-director';
 import { useCarouselDirector } from './carousel-director';
@@ -9,6 +9,7 @@ import { CarouselWorld, DestinationPage } from './carousel-world';
 import { useReducedMotion } from 'motion/react';
 import { ChevronDown, CircleAlert, Clock3, ScanLine } from 'lucide-react';
 import { Assets, Audit, Environments, Findings, Overview, RecordDetails } from './workspace-views';
+import { FlociLab } from './floci-lab';
 import { Threats } from './workspace-threats';
 import { Topology } from './topology';
 import { scope, sourceTypes, time } from './workspace-ui';
@@ -28,7 +29,8 @@ export function Dashboard({ user, api, onLogout }) {
   const [effects, setEffects] = useState(() => localStorage.getItem('cloudsentinel.effects') !== 'off');
   const cinematic = effects && !reducedMotion;
   const director = useMotionDirector(workspace, cinematic);
-  const route = destinationFromPath(location.pathname);
+  const labPage = location.pathname === '/workspace/floci-s3';
+  const route = destinationFromPath(labPage ? '/workspace/environments' : location.pathname);
   const { machine, page, selected, phase } = useCarouselDirector(route, navigate, cinematic);
   const [heroVisible, setHeroVisible] = useState(false);
   const [carouselVisible, setCarouselVisible] = useState(false);
@@ -156,7 +158,10 @@ export function Dashboard({ user, api, onLogout }) {
   if (page && data) {
     switch (page.id) {
       case 'overview': content = <Overview data={data} open={openRecord} />; break;
-      case 'environments': content = <Environments data={data} onSelect={selectEnvironment} />; break;
+      case 'environments': content = labPage ? <FlociLab api={api} onScan={update} /> : <>
+        {admin && <Link className="button secondary" to="/workspace/floci-s3">Floci S3 Lab</Link>}
+        <Environments data={data} onSelect={selectEnvironment} />
+      </>; break;
       case 'findings': content = <Findings data={data} open={openRecord} />; break;
       case 'assets': content = <>
         <div className="destination-tabs" role="group" aria-label="Asset view">
@@ -172,7 +177,7 @@ export function Dashboard({ user, api, onLogout }) {
       case 'audit': content = <Audit {...{ data, admin, api }} />; break;
     }
   }
-  const metrics = data && page?.id === 'environments' ? <div className="destination-source-map" role="group" aria-label="Select a cloud source">
+  const metrics = !labPage && data && page?.id === 'environments' ? <div className="destination-source-map" role="group" aria-label="Select a cloud source">
     {data.environments.map(source => <button type="button" key={source.id} aria-pressed={environment === source.id}
       onClick={() => selectEnvironment(environment === source.id ? '' : source.id)}>
       <i aria-hidden="true" /><strong>{source.label}</strong><small>{sourceTypes[source.kind]}</small>
@@ -181,12 +186,13 @@ export function Dashboard({ user, api, onLogout }) {
     {[['Posture', data.summary.score], ['Assets', data.summary.assets], ['Open findings', data.summary.findings], ['Critical', data.summary.critical]]
       .map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? '—'}</dd></div>)}
   </dl>;
+  if (labPage && !admin) return <Navigate to="/workspace/environments" replace />;
   if (!route && location.pathname !== '/workspace' && location.pathname !== '/workspace/') return <Navigate to="/workspace" replace />;
   return <main id="main" ref={workspace} className="workspace workspace-portal" data-effects={cinematic ? 'on' : 'off'}>
     <CarouselWorld {...{ machine, selected, phase, cinematic, toggleEffects, logout, film }} onMediaVisibility={setCarouselVisible} reduced={reducedMotion} />
     {page && <DestinationPage key={page.id} destination={page} {...{ phase, machine, cinematic, toggleEffects, metrics, film }} onMediaVisibility={setHeroVisible}
-      scopeControls={controls} reduced={reducedMotion}>
-      {sourceNotices}
+      scopeControls={labPage ? <Link className="button secondary" to="/workspace/environments">Environments</Link> : controls} reduced={reducedMotion}>
+      {!labPage && sourceNotices}
       {data ? content : <Skeleton disconnected={!!fetchError} />}
     </DestinationPage>}
     <RecordDetails record={record} data={data} close={() => setRecord(null)} />

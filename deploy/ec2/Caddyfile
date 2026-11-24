@@ -1,0 +1,20 @@
+{
+	admin off
+	persist_config off
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$CS_PUBLIC_HOST} {
+	header Strict-Transport-Security "max-age=31536000"
+
+	request_header -Forwarded
+	request_header -X-Forwarded-*
+	request_header -X-Real-IP
+	request_header -X-CloudSentinel-*
+
+	reverse_proxy 127.0.0.1:3153 {
+		header_up X-CloudSentinel-Proxy {$LAN_PROXY_TOKEN}
+	}
+}

@@ -2,8 +2,8 @@
 
 // collect() returns normalized assets and optional coverage warnings. A connector
 // without a collector is visible but is never queued.
-function connector({ id, provider, kind, label, schedule = true, endpoint, reason }, collect) {
-  return { id, provider, kind, label, schedule, endpoint, reason, collect };
+function connector({ id, provider, kind, label, schedule = true, endpoint, reason, identity }, collect) {
+  return { id, provider, kind, label, schedule, endpoint, reason, identity, collect };
 }
 
 function azureSource(config) {

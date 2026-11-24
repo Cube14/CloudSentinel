@@ -6,7 +6,10 @@ const { once } = require('node:events');
 const { createServer } = require('node:http');
 const { createHash, generateKeyPairSync, sign } = require('node:crypto');
 const { createApp } = require('../server/server');
-const { client, password } = require('./session');
+const { mkdtemp, rm } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
+const { client, login, password, seedAdmin } = require('./session');
 
 const issuer = 'https://accounts.google.com';
 const id = 'cloudsentinel-test-client';
@@ -56,13 +59,19 @@ test('Google OIDC validates state, browser binding, PKCE, nonce, signature, repl
     return json({ access_token: 'protocol-fixture-access-token', token_type: 'Bearer',
       id_token: unsigned + '.' + signature.toString('base64url') });
   }
+  const dir = await mkdtemp(join(tmpdir(), 'cs-oidc-'));
+  const dbPath = join(dir, 'auth.sqlite');
+  await seedAdmin(dbPath);
   const { app } = createApp({
-    dbPath: ':memory:', oidcFetch,
+    dbPath, oidcFetch,
     env: { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: 'protocol-fixture-secret', GOOGLE_REDIRECT_URI: redirect }
   });
   app.listen(port, '127.0.0.1');
   await once(app, 'listening');
-  t.after(() => new Promise(resolve => app.close(resolve)));
+  t.after(async () => {
+    await new Promise(resolve => app.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  });
 
   async function start(browser) {
     const { googleEnabled } = await (await browser.request('/api/auth/session')).json();
@@ -106,7 +115,7 @@ test('Google OIDC validates state, browser binding, PKCE, nonce, signature, repl
   const collision = client(base);
   await collision.request('/api/auth/session');
   email = 'local-account@example.test';
-  assert.equal((await collision.request('/api/auth/signup', { method: 'POST', body: { email, password } })).status, 201);
+  assert.equal((await collision.request('/api/auth/signup', { method: 'POST', body: { email, password } })).status, 202);
   const external = client(base);
   const collisionState = await start(external);
   assert.equal((await external.request(callback('valid', collisionState))).headers.get('location'), '/login?oauth=failed');
@@ -115,4 +124,15 @@ test('Google OIDC validates state, browser binding, PKCE, nonce, signature, repl
   const unverifiedState = await start(external);
   assert.equal((await external.request(callback('valid', unverifiedState))).headers.get('location'), '/login?oauth=failed');
   assert.equal((await external.request('/api/assets')).status, 401);
+  const admin = client(base);
+  await login(admin);
+  const audit = await (await admin.request('/api/auth/audit/events?kind=auth&limit=100')).json();
+  const entries = audit.entries.filter(event => event.action.startsWith('google-'));
+  assert.equal(entries.filter(event => event.action === 'google-started').length, 6);
+  const success = entries.find(event => event.action === 'google-login' && event.status === 'success');
+  assert.equal(success.actor, account.user.email);
+  assert.ok(entries.some(event => event.operationId === success.operationId && event.action === 'google-started'));
+  assert.equal(entries.filter(event => event.action === 'google-login' && event.status === 'failure').length, 8);
+  const exported = JSON.stringify(entries);
+  for (const secret of [readyState, unverifiedState, 'wrong-signature', 'wrong-nonce']) assert.ok(!exported.includes(secret));
 });

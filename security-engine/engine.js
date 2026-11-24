@@ -12,7 +12,7 @@ function scan(assets){
   if(a.public===true)add('CSPM-001','Public storage access','CRITICAL',a,`public=${a.public}`,'Disable anonymous/public access');
   if(a.publicPolicy===true)add('S3-001','Public S3 bucket policy','HIGH',a,'GetBucketPolicyStatus: IsPublic=true','Review the policy and S3 Block Public Access settings');
   if(a.encrypted===false)add('CSPM-002','Storage encryption disabled','HIGH',a,`encrypted=${a.encrypted}`,'Enable storage encryption');
-  if(a.encryptionAlgorithms?.length===0)add('CSPM-002','S3 encryption configuration absent','HIGH',a,'GetBucketEncryption reported no default encryption configuration','Review default object encryption settings');
+  if(a.source!=='live'&&a.encryptionAlgorithms?.length===0)add('CSPM-002','Explicit S3 encryption configuration absent','HIGH',a,'GetBucketEncryption returned no explicit configuration','Set an explicit lab default encryption configuration');
   if(a.logging===false)add('CSPM-003','Storage access logging disabled','MEDIUM',a,`logging=${a.logging}`,'Enable storage access logging');
  }
  if(a.type==='firewall')for(const [port,rule,service] of [[22,'CSPM-004','SSH'],[3389,'CSPM-005','RDP']]){

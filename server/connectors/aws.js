@@ -62,7 +62,7 @@ function awsSource(config, dependencies = {}) {
   });
   const factory = dependencies.clients || openClients;
 
-  return connector({ id, provider: 'aws', kind: 'live', label, schedule }, async () => {
+  return connector({ id, provider: 'aws', kind: 'live', label, schedule, identity: [accountId, regions] }, async () => {
     const scanSignal = AbortSignal.timeout(45000);
     let credentials;
     try {

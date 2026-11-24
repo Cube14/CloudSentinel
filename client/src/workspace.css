@@ -1,3 +1,25 @@
+.audit-overview, .audit-fields, .audit-pagination, .lab-form, .lab-description { padding: 1rem 1.25rem; }
+.audit-fields, .audit-metrics, .audit-pagination, .lab-evidence { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+.audit-metrics { justify-content: space-between; margin: 0 0 1rem; }
+.audit-metrics dt, .audit-event dt { opacity: .72; font-size: .85rem; }
+.audit-metrics dd, .audit-event dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.audit-metrics dd { font-size: 1.15rem; }
+.audit-fields label, .lab-form label { display: grid; gap: .35rem; font-size: .85rem; }
+.audit-fields input, .audit-fields select, .lab-form input, .lab-form select {
+  padding: .6rem; max-width: 100%; border: 1px solid #34404a; border-radius: .4rem;
+  background: #141c23; color: #f0f2f5; font: inherit;
+}
+.audit-days { display: grid; gap: .4rem; margin-top: 1rem; }
+.audit-days label { display: grid; grid-template-columns: 7rem minmax(3rem, 13rem) auto; align-items: center; gap: .5rem; }
+.audit-days meter { width: 100%; }
+.audit-event { display: grid; gap: .75rem; margin: 0; }
+.audit-evidence { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lab-form { display: grid; justify-items: start; gap: 1rem; }
+.lab-form .lab-options { padding: 0; }
+.lab-evidence { align-items: start; }
+.lab-evidence > div { flex: 1 1 15rem; min-width: 0; }
+.lab-description a { text-decoration: underline; }
+
 .workspace{
   --ink:#edf2fa;--muted:#94a8c5;--line:#233148;--accent:#9ed7ff;--shelf:#151d2b;
   display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100svh;background:#080b10;color:var(--ink);transition:grid-template-columns .22s ease;

@@ -6,6 +6,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { detect } = require('../security-engine/engine');
 const { createScanner, fixtureSources, providers } = require('./scans');
+const { openLab, endpoint: labEndpoint, sourceEnvironment: labSource } = require('./floci-lab');
+const { client: auditClient, record } = require('./audit');
 const { flociSource } = require('./floci');
 const { loadConnectors } = require('./connectors/config');
 const { investigate, ollamaStatus } = require('./investigation');
@@ -35,7 +37,9 @@ async function parse(req, limit = 1000000) {
     }
     chunks.push(chunk);
   }
-  const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+  let body;
+  try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; }
+  catch { throw new SyntaxError('Invalid JSON object.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new SyntaxError('Expected a JSON object');
   return body;
 }
@@ -62,7 +66,7 @@ async function serveClient(res, pathname, clientDir) {
 }
 
 function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures'), sources,
-  dbPath = databasePath(env), oidcFetch, clientDir = defaultClientDir } = {}) {
+  dbPath = databasePath(env), oidcFetch, labDependencies, clientDir = defaultClientDir } = {}) {
   const intervalMs = Number(env.SCAN_INTERVAL_MS ?? 15000);
   if (!Number.isInteger(intervalMs) || intervalMs < 1000 || intervalMs > 2147483647) {
     throw new Error('SCAN_INTERVAL_MS must be an integer from 1000 to 2147483647');
@@ -72,13 +76,24 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     if (env.FLOCI_ENDPOINT) configuredSources.push(flociSource(env.FLOCI_ENDPOINT));
     configuredSources.push(...loadConnectors(env.CLOUD_SOURCES_FILE, root, configuredSources.map(source => source.id)));
   }
-  const scanner = createScanner(configuredSources);
   const boundary = configureBoundary(env);
   const store = openStore(dbPath);
+  const labConnector = env.FLOCI_LAB_ENABLED === '1' && env.FLOCI_ENDPOINT === labEndpoint &&
+    configuredSources.find(source => source.id === labSource && source.kind === 'emulator' &&
+      source.endpoint === labEndpoint && source.collect);
+  const lab = labConnector ? openLab(store, env.FLOCI_ENDPOINT, labDependencies) : null;
+  const scanner = createScanner(configuredSources.map(source => source === labConnector ? {
+    ...source,
+    async collect() {
+      await lab.verify();
+      return source.collect();
+    }
+  } : source), store);
   let auth;
   try {
     auth = createAuth({ store, env, json, parse, oidcFetch, lanOrigin: boundary.lanOrigin });
   } catch (error) {
+    lab?.close();
     store.close();
     throw error;
   }
@@ -152,8 +167,44 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
       if (!user) return json(res, 401, { error: 'Sign in required.' });
       if (req.method === 'GET' && pathname === '/api/ollama/status') return json(res, 200, await ollamaStatus(env));
       if (req.method === 'POST') {
+        const action = {
+          '/api/scans/run': 'request-scan', '/api/events': 'add-fixture-event',
+          '/api/simulations/run': 'reload-simulation', '/api/lab/s3': 'configure-lab-bucket',
+          '/api/lab/s3/scan': 'request-lab-scan'
+        }[pathname] || (pathname.endsWith('/respond') && pathname.startsWith('/api/incidents/') ? 'respond-to-incident'
+          : pathname.endsWith('/investigate') && pathname.startsWith('/api/incidents/') ? 'investigate-incident' : null);
+        if (action && user.role === 'admin') res.once('finish', () => {
+          try {
+            record(store, 'admin', action, res.statusCode < 400 ? 'success' : 'failure', {
+              ...auditClient(req, user), details: { httpStatus: res.statusCode }
+            });
+          } catch (error) { console.error('Could not record admin action:', error.code || error.name); }
+        });
         if (user.role !== 'admin') return json(res, 403, { error: 'Administrator access required.' });
         auth.checkCsrf(req, user);
+      }
+      if (pathname === '/api/lab/s3' || pathname === '/api/lab/s3/scan') {
+        if (user.role !== 'admin') return json(res, 403, { error: 'Administrator access required.' });
+        if ([...url.searchParams.keys()].some(key => key !== 'bucket' || req.method !== 'GET') ||
+            url.searchParams.getAll('bucket').length > 1) {
+          return json(res, 400, { error: 'The S3 Lab only accepts the fixed local Floci source and an exact bucket name.' });
+        }
+        if (!lab) return json(res, 503, { error: 'Enable the S3 Lab and configure FLOCI_ENDPOINT=http://127.0.0.1:4566.' });
+        if (pathname === '/api/lab/s3' && req.method === 'GET') {
+          const bucket = url.searchParams.get('bucket');
+          return json(res, 200, bucket === null ? await lab.list() : await lab.inspect(bucket));
+        }
+        if (pathname === '/api/lab/s3' && req.method === 'POST') {
+          return json(res, 200, await lab.mutate(await parse(req, 4096), auditClient(req, user)));
+        }
+        if (pathname === '/api/lab/s3/scan' && req.method === 'POST') {
+          await scanner.run(labSource, auditClient(req, user), true);
+          const data = dashboard(labSource);
+          const status = data.environments.find(source => source.id === labSource).status;
+          return json(res, status === 'failed' ? 503 : 200, { status, findings: data.findings,
+            resolved: data.resolved, ...(status === 'failed' ? { error: 'Floci scan failed. Findings were preserved.' } : {}) });
+        }
+        return json(res, 404, { error: 'Not found' });
       }
       const id = url.searchParams.get('environment');
       if (id !== null && !scanner.has(id)) return json(res, 404, { error: 'Unknown environment' });
@@ -184,7 +235,7 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
 
       if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
       if (pathname === '/api/scans/run') {
-        await scanner.run(id);
+        await scanner.run(id, auditClient(req, user));
         const { summary } = dashboard(id);
         if (id !== null && summary.providers[0].status === 'not-connected') {
           return json(res, 409, { ...summary, error: summary.providers[0].error || 'Source not connected' });
@@ -233,7 +284,8 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
         sourceEnvironment: incident.environment, status: body.decision === 'approve' ? 'SIMULATED_SUCCESS' : 'REJECTED',
         timestamp: new Date().toISOString()
       };
-      store.addAudit('response', log);
+      const attribution = auditClient(req, user);
+      store.addAudit('response', { ...log, ...attribution, resource: incident.id, operationId: log.id });
       return json(res, 201, log);
     } catch (error) {
       const status = error.status || (error instanceof SyntaxError ? 400 : 500);
@@ -255,7 +307,7 @@ function createApp({ env = process.env, fixtureDir = path.join(root, 'fixtures')
     pruning = setInterval(() => store.prune(Date.now()), 600000);
     pruning.unref();
   });
-  app.on('close', () => { clearInterval(timer); clearInterval(pruning); store.close(); });
+  app.on('close', () => { clearInterval(timer); clearInterval(pruning); scanner.stop(); lab?.close(); store.close(); });
   return { app, rescan: () => scanner.run().then(() => dashboard(null).summary), summary: () => dashboard(null).summary };
 }
 

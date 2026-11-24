@@ -44,8 +44,12 @@ test('sensitive APIs require authentication and signup grants viewer access only
   }
   assert.equal((await post(browser, '/api/scans/run')).status, 401);
   const created = await signup(browser, ' Viewer@Example.Test ');
-  assert.equal(created.status, 201);
-  const { user, googleEnabled } = await created.json();
+  assert.equal(created.status, 202);
+  const duplicate = await signup(browser, email);
+  assert.equal(duplicate.status, 202);
+  assert.deepEqual(await duplicate.json(), await created.json());
+  assert.equal((await browser.request('/api/dashboard')).status, 401);
+  const { user, googleEnabled } = await login(browser, email);
   assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'role']);
   assert.equal(user.email, email);
   assert.equal(user.role, 'viewer');
@@ -133,8 +137,7 @@ test('SQLite persists identities, audit and server-side sessions, and supports r
 test('invalid logins are rate-limited by normalized account', async t => {
   const { base } = await launch(t);
   const browser = client(base);
-  assert.equal((await signup(browser)).status, 201);
-  await post(browser, '/api/auth/logout');
+  assert.equal((await signup(browser)).status, 202);
   for (let index = 0; index < 5; index++) {
     const response = await post(browser, '/api/auth/login', { email: index % 2 ? email.toUpperCase() : email, password: password + ' wrong' });
     assert.equal(response.status, 401);

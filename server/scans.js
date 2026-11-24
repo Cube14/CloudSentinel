@@ -3,6 +3,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { scan } = require('../security-engine/engine');
+const { randomUUID } = require('node:crypto');
+const { record } = require('./audit');
 const { connector } = require('./connectors/interface');
 
 const providers = ['aws', 'azure', 'gcp'];
@@ -37,26 +39,47 @@ function fixtureSources(fixtureDir) {
   });
 }
 
-function createScanner(sources) {
-  const environments = new Map(sources.map(({ collect, id, provider, kind, label, schedule, endpoint, reason }) => [id, {
+function createScanner(sources, store) {
+  const environments = new Map(sources.map(({ collect, id, provider, kind, label, schedule, endpoint, reason, identity }) => [id, {
     source: { id, provider, kind, label, schedule, endpoint }, collect,
     status: collect ? 'idle' : 'not-connected', connection: collect ? 'configured' : 'not-connected',
     lastAttempt: null, lastSuccess: null, lastSnapshot: null,
-    error: reason || null, warnings: [], coverage: null, result: null, inventory: [], resolved: [], history: []
+    error: reason || null, warnings: [], coverage: null, result: null, inventory: [], resolved: [], history: [],
+    storageKey: JSON.stringify([id, provider, kind, endpoint, identity])
   }]));
   if (environments.size !== sources.length) throw new Error('Duplicate cloud source ID');
+  const fields = ['lastAttempt', 'lastSuccess', 'lastSnapshot', 'status', 'connection', 'warnings',
+    'coverage', 'error', 'result', 'inventory', 'resolved', 'history'];
+  const snapshot = entry => Object.fromEntries(fields.map(key => [key, entry[key]]));
+  for (const entry of environments.values()) {
+    const saved = entry.collect && store?.readScan(entry.storageKey);
+    if (saved) Object.assign(entry, saved);
+  }
   let queue = Promise.resolve();
+  let stopping = false;
 
-  function runEnvironment(environment) {
-    if (!environment.collect) return;
-    if (environment.pending) return environment.pending;
+  function runEnvironment(environment, attribution, fresh = false) {
+    if (stopping || !environment.collect) return;
+    if (environment.pending) return fresh
+      ? environment.pending.then(() => runEnvironment(environment, attribution, true))
+      : environment.pending;
     environment.status = 'queued';
     environment.pending = queue.then(async () => {
+      if (stopping) return;
+      const previousState = snapshot(environment);
+      const sourceEnvironment = environment.source.id;
+      const operationId = randomUUID();
+      const scanAudit = (action, status, details) => store && record(store, 'scan', action, status, {
+        ...attribution, sourceEnvironment, operationId, details
+      });
+      let transitions = [];
       environment.status = 'running';
       environment.lastAttempt = new Date().toISOString();
       environment.error = null;
       try {
+        scanAudit('scan-started', 'started');
         const output = await environment.collect();
+        if (stopping) return;
         const { assets, state = 'succeeded', warnings = [], error, connection } =
           Array.isArray(output) ? { assets: output } : output;
         environment.warnings = warnings;
@@ -83,9 +106,16 @@ function createScanner(sources) {
         const result = scan(inventory);
         const previous = new Map([...environment.resolved, ...(environment.result?.findings || [])]
           .map(finding => [finding.id, finding]));
+        const transition = (action, finding, details = {}) => transitions.push({
+          action, resource: finding.resourceId, details: { findingId: finding.id, ruleId: finding.ruleId, ...details }
+        });
         result.findings = result.findings.map(finding => {
           const existing = previous.get(finding.id);
           previous.delete(finding.id);
+          if (!existing || existing.status === 'RESOLVED') {
+            transition(existing ? 'finding-reopened' : 'finding-opened', finding,
+              finding.ruleId === 'S3-001' ? { evidence: finding.evidence } : {});
+          }
           return { ...finding, detectedAt: existing?.detectedAt || result.scannedAt, lastSeenAt: result.scannedAt };
         });
         if (partial) {
@@ -100,9 +130,24 @@ function createScanner(sources) {
             result.counts[severity] = result.findings.filter(finding => finding.severity === severity).length;
           }
         }
-        environment.resolved = [...previous.values()].flatMap(finding => finding.status === 'RESOLVED'
-          ? [finding]
-          : partial ? [] : [{ ...finding, stale: undefined, status: 'RESOLVED', resolvedAt: result.scannedAt }]);
+        const currentAssets = new Map(inventory.filter(asset => asset.type === 'storage').map(asset => [asset.id, asset]));
+        environment.resolved = [...previous.values()].flatMap(finding => {
+          if (finding.status === 'RESOLVED') return [finding];
+          if (partial) return [];
+          let resolutionEvidence;
+          if (finding.ruleId === 'S3-001') {
+            const asset = currentAssets.get(finding.resourceId);
+            if (asset && asset.publicPolicy !== false) {
+              result.findings.push({ ...finding, stale: true });
+              result.counts[finding.severity]++;
+              result.score = null;
+              return [];
+            }
+            resolutionEvidence = asset ? 'GetBucketPolicyStatus: no public policy' : 'Bucket absent from complete inventory';
+          }
+          transition('finding-resolved', finding, resolutionEvidence ? { before: finding.evidence, after: resolutionEvidence } : {});
+          return [{ ...finding, stale: undefined, status: 'RESOLVED', resolvedAt: result.scannedAt, resolutionEvidence }];
+        });
         environment.result = result;
         environment.inventory = inventory;
         environment.lastSnapshot = result.scannedAt;
@@ -111,18 +156,42 @@ function createScanner(sources) {
         environment.status = state;
         environment.connection = 'connected';
       } catch (error) {
+        transitions = [];
         environment.error = environment.source.kind === 'live' ? 'Live connector could not complete the scan.' : error.message;
         environment.status = 'failed';
         environment.connection = 'unavailable';
       } finally {
-        environment.history.unshift({
+        if (stopping) return;
+        const history = { operationId,
           startedAt: environment.lastAttempt, finishedAt: new Date().toISOString(),
           status: environment.status, error: environment.error,
           findings: ['succeeded', 'partial'].includes(environment.status) ? environment.result.findings.length : null,
           warnings: environment.warnings
-        });
-        environment.history.length = Math.min(environment.history.length, 30);
-        delete environment.pending;
+        };
+        environment.history = [history, ...environment.history].slice(0, 30);
+        try {
+          if (store) store.transaction(() => {
+            const successful = ['succeeded', 'partial'].includes(environment.status);
+            if (successful) for (const entry of transitions.filter(entry => entry.action !== 'finding-resolved')) {
+              record(store, 'finding', entry.action, 'observed', { sourceEnvironment, operationId,
+                resource: entry.resource, details: entry.details });
+            }
+            scanAudit(successful ? 'scan-completed' : 'scan-failed', environment.status, {
+              coverage: successful ? environment.coverage : null, findings: history.findings
+            });
+            if (successful) for (const entry of transitions.filter(entry => entry.action === 'finding-resolved')) {
+              record(store, 'finding', entry.action, 'observed', { sourceEnvironment, operationId,
+                resource: entry.resource, details: entry.details });
+            }
+            store.saveScan(environment.storageKey, snapshot(environment));
+          });
+        } catch (error) {
+          Object.assign(environment, previousState, { status: 'failed', connection: 'unavailable',
+            error: 'Could not persist the scan.' });
+          console.error('Could not persist scan:', error.code || error.name);
+        } finally {
+          delete environment.pending;
+        }
       }
     });
     queue = environment.pending;
@@ -145,8 +214,9 @@ function createScanner(sources) {
     has: id => environments.has(id),
     selected,
     describe,
-    run: (id = null) => Promise.all(selected(id).map(runEnvironment)),
-    runScheduled: () => Promise.all(selected(null).filter(entry => entry.source.schedule !== false).map(runEnvironment))
+    run: (id = null, attribution, fresh) => Promise.all(selected(id).map(entry => runEnvironment(entry, attribution, fresh))),
+    runScheduled: () => Promise.all(selected(null).filter(entry => entry.source.schedule !== false).map(entry => runEnvironment(entry))),
+    stop: () => { stopping = true; }
   };
 }
 

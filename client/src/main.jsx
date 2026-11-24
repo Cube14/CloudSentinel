@@ -52,7 +52,9 @@ function AuthProvider({ children }) {
     }
   }, [session, refresh]);
   async function authenticate(kind, body) {
-    setSession(await request('/api/auth/' + kind, { body, csrf: session?.csrf }));
+    const result = await request('/api/auth/' + kind, { body, csrf: session?.csrf });
+    if (kind === 'login') setSession(result);
+    return result;
   }
   const value = { session, connectionError, refresh, api, authenticate };
   return <Auth.Provider value={value}>{children}</Auth.Provider>;
@@ -81,7 +83,8 @@ function AuthScreen() {
     setError('');
     setPending(true);
     try {
-      await authenticate(signup ? 'signup' : 'login', { email: values.get('email'), password: values.get('password') });
+      const result = await authenticate(signup ? 'signup' : 'login', { email: values.get('email'), password: values.get('password') });
+      if (signup) navigate('/login', { replace: true, state: { registration: result.message, email: values.get('email') } });
     } catch (error) {
       setError(error.message);
     } finally {
@@ -126,10 +129,11 @@ function AuthScreen() {
           animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? 0 : .35, ease: cinemaEase }}>
           <h1 id="access-heading">{signup ? 'Create an account' : 'Welcome back'}</h1>
           <p className="auth-intro">{signup ? 'New accounts have read-only workspace access.' : 'Sign in to your cloud security workspace.'}</p>
+          {!signup && location.state?.registration && <p role="status">{location.state.registration}</p>}
           {feedback && <p className="feedback error" role="alert"><CircleAlert size={17} />{feedback}</p>}
           {connectionError && !session && <button type="button" className="button secondary" onClick={refresh}>Reconnect</button>}
           <form onSubmit={submit} className="auth-form" aria-busy={pending}>
-            <label>Email address<input name="email" type="email" autoComplete="email" maxLength={254} placeholder="you@example.com" required /></label>
+            <label>Email address<input name="email" type="email" autoComplete="email" defaultValue={signup ? '' : location.state?.email} maxLength={254} placeholder="you@example.com" required /></label>
             <label>Password
               <span className="password-field"><input name="password" type={visible ? 'text' : 'password'} minLength={signup ? 15 : undefined}
                 maxLength={128} autoComplete={signup ? 'new-password' : 'current-password'} required
